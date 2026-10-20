@@ -154,7 +154,7 @@ impl Table {
     fn after_new_round(&mut self) {
         self.ast0 = [self.now - 2000.0; 4];
         self.collect = 0.0;
-        self.wake = self.now + 600.0;
+        self.wake = self.now + 1250.0; // le temps de distribuer les cartes à l'écran
     }
 
     /// Enchère du joueur dont c'est le tour (-1 = passer, sinon couleur d'atout).

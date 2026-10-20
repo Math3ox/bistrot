@@ -8,6 +8,7 @@ mod cfg;
 mod draw;
 mod engine;
 mod table;
+mod vue;
 
 use bistrot::cartes::Paquet;
 use bistrot::gfx::Gfx;
@@ -44,7 +45,7 @@ fn main() {
         hover: None,
         mouse: (0.0, 0.0),
         sig: 0,
-        under: None,
+        vue: vue::Vue::default(),
     });
 }
 
@@ -63,8 +64,8 @@ struct Belote {
     mouse: (f32, f32),
     /// empreinte de ce qui est affiché : on ne redessine que si elle change
     sig: u64,
-    /// couche fixe (décor + talon, étiquettes, mains adverses) et son empreinte
-    under: Option<(u64, tiny_skia::Pixmap)>,
+    /// ce qui bouge à l'écran (distribution, main, retourne, bulles, score)
+    vue: vue::Vue,
 }
 
 fn btn_action(t: &mut Table, id: BtnId) {
@@ -111,27 +112,27 @@ impl shell::Game for Belote {
         "belote_shot.png"
     }
 
+    /// Le fond (table + talon, étiquettes, mains adverses) n'est refait que si cette empreinte change.
+    fn fond_signature(&self) -> u64 {
+        draw::under_signature(&self.t, &self.vue) ^ self.gallery as u64
+    }
+
     fn background(&mut self, g: &Gfx) {
-        self.under = None; // décor refait : la couche fixe aussi
         self.paquet.echelle((g.sc * 1.04).max(0.5));
         bistrot::table::dessiner(g);
+        if !self.gallery {
+            draw::draw_under(&self.t, g, &self.polices, &self.paquet, &self.vue);
+        }
+    }
+
+    fn alleger(&mut self) {
+        self.paquet.alleger();
     }
 
     fn draw(&mut self, g: &Gfx) {
         if self.gallery {
             draw::gallery(g, &self.polices, &self.paquet);
             return;
-        }
-        // couche fixe : refaite seulement si son état (ou la taille de la fenêtre) change
-        let sig = draw::under_signature(&self.t);
-        let size_ok = self.under.as_ref().map(|(_, p)| g.snapshot_size() == (p.width(), p.height())).unwrap_or(false);
-        if !size_ok || self.under.as_ref().map(|u| u.0) != Some(sig) {
-            let mut layer = g.snapshot();
-            draw::draw_under(&self.t, &g.on(&mut layer), &self.polices, &self.paquet);
-            self.under = Some((sig, layer));
-        }
-        if let Some((_, layer)) = &self.under {
-            g.restore(layer);
         }
         let ov = Overlay {
             strength: self.strength,
@@ -140,12 +141,13 @@ impl shell::Game for Belote {
             net: self.net.panel(),
             optline: draw::optline(&self.t),
         };
-        draw::draw_over(&self.t, g, &self.polices, &self.paquet, &ov);
+        draw::draw_over(&self.t, g, &self.polices, &self.paquet, &ov, &self.vue);
     }
 
     fn tick(&mut self, dt: f64) -> bool {
         self.t.tick(dt);
         self.net.poll(&mut self.t);
+        self.vue.maj(&self.t, self.hover, dt);
         if self.t.save_needed {
             self.save();
         }
@@ -158,7 +160,7 @@ impl shell::Game for Belote {
     fn animating(&self) -> bool {
         let t = &self.t;
         let last = t.ast0.iter().cloned().fold(f64::MIN, f64::max);
-        t.collect > 0.0 || t.now - last < 450.0
+        t.collect > 0.0 || t.now - last < 450.0 || self.vue.anime()
     }
 
     fn key(&mut self, k: Key) {
@@ -368,6 +370,8 @@ mod tests {
         }
         let mut frame = bg.clone();
         let ov = Overlay { strength: false, hover: None, mouse: (0.0, 0.0), net: None, optline: draw::optline(&t) };
+        let mut vue = vue::Vue::default();
+        vue.maj(&t, None, 16.0);
         let n = 100;
         let mut tm = [0f64; 3];
         for _ in 0..n {
@@ -375,9 +379,9 @@ mod tests {
             frame.data_mut().copy_from_slice(bg.data());
             let t1 = Instant::now();
             let g = Gfx::fit(&mut frame, &glyphs);
-            draw::draw_under(&t, &g, &polices, &paquet);
+            draw::draw_under(&t, &g, &polices, &paquet, &vue);
             let t2 = Instant::now();
-            draw::draw_over(&t, &g, &polices, &paquet, &ov);
+            draw::draw_over(&t, &g, &polices, &paquet, &ov, &vue);
             let t3 = Instant::now();
             for (k, d) in [t1 - t0, t2 - t1, t3 - t2].iter().enumerate() {
                 tm[k] += d.as_secs_f64() * 1000.0;

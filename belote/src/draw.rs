@@ -3,7 +3,8 @@
 
 use crate::engine::*;
 use crate::table::{Table, LEVEL_NAMES, SUIT_NAMES};
-use bistrot::anim::Vol;
+use crate::vue::{Vue, BULLE_FONDU, BULLE_POP, DUREE_RETOURNE};
+use bistrot::anim::{rebond, Distribution, Vol};
 use bistrot::cartes::{Carte, Couleur, Paquet};
 use bistrot::gfx::{Align, Color, Face, Gfx, Xf};
 use bistrot::polices::Polices;
@@ -59,6 +60,7 @@ pub struct Scene<'a, 'b> {
     g: &'a Gfx<'b>,
     f: &'a Polices,
     deck: &'a Paquet,
+    vue: &'a Vue,
 }
 
 fn carte(c: u8) -> Option<Carte> {
@@ -83,9 +85,49 @@ impl Scene<'_, '_> {
             }
             self.text(&format!("TALON : {}", 32 - gs.dpos), 300., 398., &self.f.petit, C_WHITE, Align::Center);
         }
-        if gs.phase == PH_BID1 || gs.phase == PH_BID2 {
-            let xf = Xf::place(550.0, 352.0, 1.0, 0.05, SOL);
-            self.deck.poser(self.g, &xf, carte(gs.turned as u8), false);
+    }
+
+    /// La retourne : face cachée pendant la distribution, puis elle se retourne.
+    fn retourne(&self, t: &Table) {
+        let gs = &t.e.gs;
+        if gs.phase != PH_BID1 && gs.phase != PH_BID2 {
+            return;
+        }
+        let k = ((t.now - self.vue.retourne.1) / DUREE_RETOURNE).clamp(0.0, 1.0);
+        let base = Xf::place(550.0, 352.0 - 30.0 * (std::f64::consts::PI * k).sin(), 1.0, 0.05, SOL);
+        let sx = (std::f64::consts::PI * k).cos().abs().max(0.02) as f32;
+        let xf = base.puis(&Xf { a: sx, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 });
+        self.deck.poser(self.g, &xf, if k > 0.5 { carte(gs.turned as u8) } else { None }, false);
+    }
+
+    /// Cartes en cours de distribution (ou posées, en attendant que toute la main soit arrivée).
+    fn distribution(&self, t: &Table) {
+        // le paquet du donneur, tant qu'il reste des cartes à distribuer
+        let restantes = self.vue.vols.iter().filter(|v| t.now < v.t0).count();
+        if let Some(v) = self.vue.vols.iter().find(|v| t.now < v.t0) {
+            for k in 0..restantes.min(4) {
+                let xf = Xf::place(v.src.0 - k as f64 * 0.8, v.src.1 - k as f64 * 1.6, 0.62, 0.3, SOL);
+                self.deck.poser(self.g, &xf, None, false);
+            }
+        }
+        for v in &self.vue.vols {
+            let ms = t.now - v.t0;
+            if ms < 0.0 {
+                continue; // encore dans le paquet
+            }
+            let pl = self.place(t, v.p);
+            let n = t.e.gs.hn[v.p] as usize;
+            let d = if v.p == t.me {
+                let i = t.e.gs.hand[t.me][..n].iter().position(|&c| c == v.carte).unwrap_or(0);
+                Distribution { src: v.src, dst: (main_x(i, n), 686.0), echelle: 1.04, rotation: 0.0, retourner: true }
+            } else {
+                Distribution { src: v.src, dst: tapis::pos_dos(&pl, v.index, n), echelle: 0.62, rotation: pl.rotation, retourner: false }
+            };
+            let (xf, ombre, face) = d.a(ms);
+            if let Some((x, y, rx, ry)) = ombre {
+                self.g.ellipse(&Xf::ID, x, y, rx, ry, Some(C_SHFLY), Some(C_SHFLY));
+            }
+            self.deck.poser(self.g, &xf, if face { carte(v.carte) } else { None }, false);
         }
     }
 
@@ -104,7 +146,8 @@ impl Scene<'_, '_> {
             }
             let pl = self.place(t, p);
             let n = t.e.gs.hn[p] as usize;
-            for i in 0..n {
+            // seules les cartes déjà arrivées (les autres sont en cours de distribution)
+            for i in 0..self.vue.stable[p].min(n) {
                 self.deck.poser(self.g, &tapis::dos_adversaire(&pl, i, n), None, false);
             }
         }
@@ -144,18 +187,21 @@ impl Scene<'_, '_> {
         let n = t.e.gs.hn[me] as usize;
         let legal = t.my_legal();
         for i in 0..n {
-            let mut y = 686.0;
-            if hover == Some(i) && legal >> i & 1 == 1 {
+            let c = t.e.gs.hand[me][i];
+            if self.vue.vols.iter().any(|v| v.p == me && v.carte == c) {
+                continue; // en cours de distribution
+            }
+            // position et levée animées (glissement vers la place, levée au survol)
+            let x = self.vue.x.get(&c).copied().unwrap_or_else(|| main_x(i, n));
+            let mut y = 686.0 - self.vue.levee.get(&c).copied().unwrap_or(0.0);
+            if !self.vue.levee.contains_key(&c) && hover == Some(i) && legal >> i & 1 == 1 {
                 y -= 18.0;
             }
-            if t.hint == i as i32 {
-                y -= 14.0;
-            }
-            let xf = Xf::place(main_x(i, n), y, 1.04, 0.0, 1.0);
+            let xf = Xf::place(x, y, 1.04, 0.0, 1.0);
             if t.hint == i as i32 {
                 self.g.rrect(&xf, -56., -76., 112., 152., 16., Some(C_GOLD), Some(C_GOLD));
             }
-            self.deck.poser(self.g, &xf, carte(t.e.gs.hand[me][i]), legal >> i & 1 == 0);
+            self.deck.poser(self.g, &xf, carte(c), legal >> i & 1 == 0);
         }
     }
 
@@ -168,8 +214,10 @@ impl Scene<'_, '_> {
         let two = t.np() == 2;
         self.text(if two { "TOI" } else { "NOUS" }, 30., 20., &f.moyen, C_PLAYER, Align::Left);
         self.text(if two { "BOT" } else { "EUX" }, 30., 54., &f.moyen, C_ENEMY, Align::Left);
-        self.text(&t.e.score[us].to_string(), 308., 20., &f.moyen, C_WHITE, Align::Right);
-        self.text(&t.e.score[us ^ 1].to_string(), 308., 54., &f.moyen, C_WHITE, Align::Right);
+        // le score défile jusqu'à sa nouvelle valeur
+        let sc = |k: usize| (self.vue.score[k].round() as i64).to_string();
+        self.text(&sc(us), 308., 20., &f.moyen, C_WHITE, Align::Right);
+        self.text(&sc(us ^ 1), 308., 54., &f.moyen, C_WHITE, Align::Right);
         let obj = format!("Objectif {}   -   victoires {} / défaites {}", t.e.target, t.wins[0], t.wins[1]);
         self.text(&obj, 30., 88., &f.petit, C_TXTDIM, Align::Left);
         g.rrect(&id, 824., 12., 262., 96., 14., Some(C_PANEL), Some(C_PANELLN));
@@ -181,19 +229,23 @@ impl Scene<'_, '_> {
             let c = Couleur::depuis(trump as usize);
             (c, if c.rouge() { C_TRUMPRED } else { C_WHITE })
         };
-        self.text(suit.symbole(), 1048., 30., &f.symbole, col, Align::Center);
+        bistrot::cartes::symbole(self.g, &Xf::ID, suit, 1048., 60., 20., col);
         if trump >= 0 {
             let s = format!("pris par {}", t.player_name(t.e.gs.taker as usize));
             self.text(&s, 842., 54., &f.petit, C_TXT, Align::Left);
         }
     }
 
+    /// Bulles : apparition qui rebondit, fondu à la fin.
     fn bubbles(&self, t: &Table) {
         for p in 0..t.np() {
-            let Some((txt, end)) = &t.bub[p] else { continue };
-            if *end >= t.now {
-                ui::bulle(self.g, self.f, self.place(t, p).bulle, txt);
+            let Some((txt, fin, debut)) = &self.vue.bulles[p] else { continue };
+            if *fin < t.now {
+                continue;
             }
+            let taille = 0.6 + 0.4 * rebond((t.now - debut) / BULLE_POP);
+            let opacite = ((fin - t.now) / BULLE_FONDU).min(1.0);
+            ui::bulle_animee(self.g, self.f, self.place(t, p).bulle, txt, taille as f32, opacite as f32);
         }
     }
 
@@ -334,37 +386,39 @@ pub fn optline(t: &Table) -> String {
 
 /// Galerie des cartes (touche G), sur le décor.
 pub fn gallery(g: &Gfx, f: &Polices, deck: &Paquet) {
-    Scene { g, f, deck }.gallery();
+    Scene { g, f, deck, vue: &Vue::default() }.gallery();
 }
 
 /// Couche fixe tant que l'état ne change pas (talon, étiquettes, mains adverses) : mise en cache.
-pub fn draw_under(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet) {
-    let s = Scene { g, f, deck };
+pub fn draw_under(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, vue: &Vue) {
+    let s = Scene { g, f, deck, vue };
     s.talon(t);
     s.labels(t);
     s.opp_hands(t);
 }
 
 /// Empreinte de la couche fixe.
-pub fn under_signature(t: &Table) -> u64 {
+pub fn under_signature(t: &Table, vue: &Vue) -> u64 {
     use std::hash::{Hash, Hasher};
     let gs = &t.e.gs;
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    (gs.phase, gs.turn, gs.hn, gs.dpos, gs.turned, t.e.dealer, t.e.np, t.me, t.e.lvl).hash(&mut h);
+    (gs.phase, gs.turn, gs.hn, vue.stable, gs.dpos, t.e.dealer, t.e.np, t.me, t.e.lvl).hash(&mut h);
     h.finish()
 }
 
 /// Tout ce qui bouge ou change souvent, par-dessus la couche fixe.
-pub fn draw_over(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, ov: &Overlay) {
-    let s = Scene { g, f, deck };
+pub fn draw_over(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, ov: &Overlay, vue: &Vue) {
+    let s = Scene { g, f, deck, vue };
+    s.retourne(t);
     s.tricks(t);
     s.my_hand(t, ov.hover);
+    s.distribution(t);
     s.panels(t);
     s.bubbles(t);
     s.overlay(t);
     s.buttons(t, ov.mouse);
-    s.text(&t.message(), 550., 764., &f.etiquette, C_TXT, Align::Center);
-    s.text(&ov.optline, 550., 782., &f.petit, C_TXTDIM, Align::Center);
+    s.text(&t.message(), 550., 757., &f.etiquette, C_TXT, Align::Center);
+    s.text(&ov.optline, 550., 780., &f.petit, C_TXTDIM, Align::Center);
     if ov.strength {
         s.strength(t);
     }

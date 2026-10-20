@@ -55,10 +55,19 @@ impl<T> Bouton<T> {
 }
 
 /// Bulle de parole (« Je passe », « Belote ! »...) centrée en (x, y).
-pub fn bulle(g: &Gfx, p: &Polices, (x, y): (f32, f32), texte: &str) {
+pub fn bulle(g: &Gfx, p: &Polices, pos: (f32, f32), texte: &str) {
+    bulle_animee(g, p, pos, texte, 1.0, 1.0);
+}
+
+/// Bulle qui apparaît en rebondissant (`taille` autour de 1) et s'efface (`opacite` de 1 à 0).
+pub fn bulle_animee(g: &Gfx, p: &Polices, (x, y): (f32, f32), texte: &str, taille: f32, opacite: f32) {
+    let a = |c: Color| Color::new(c.r, c.g, c.b, c.a * opacite);
+    let xf = Xf::centre(x, y, taille);
     let w = texte.chars().count() as f32 * 10.0 + 34.0;
-    g.rrect(&Xf::ID, x - w / 2.0, y - 18., w, 36., 14., Some(C_IVORY), Some(C_CARDLN));
-    g.text(texte, x, y - 12., &p.etiquette, C_BLACK, Align::Center);
+    g.rrect(&xf, -w / 2.0, -18., w, 36., 14., Some(a(C_IVORY)), Some(a(C_CARDLN)));
+    let mut face = p.etiquette.clone();
+    face.size *= taille;
+    g.text(texte, x, y - 12. * taille, &face, a(C_BLACK), Align::Center);
 }
 
 /// Étiquette d'un joueur : bord bleu (notre équipe) ou rose (adversaires), doré si c'est son tour,

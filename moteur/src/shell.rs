@@ -1,20 +1,32 @@
-//! Fenêtre et boucle du jeu, sans carte graphique : winit pour la fenêtre et les entrées, softbuffer pour
-//! afficher l'image calculée par le processeur (GDI sous Windows, X11 / Wayland sous Linux).
-//! Le décor fixe est dessiné une fois dans une image en cache (refait seulement si la taille change) ;
-//! chaque image recopie ce décor puis dessine ce qui bouge. Rien n'est redessiné quand rien ne change.
+//! Fenêtre et boucle du jeu, sans carte graphique : winit pour la fenêtre et les entrées ; l'image calculée
+//! par le processeur est affichée directement par GDI sous Windows (aucun tampon en double), par softbuffer
+//! ailleurs (X11 / Wayland).
+//!
+//! Mémoire : **un jeu ne dépasse jamais 50 Mo**. Deux images seulement (le fond en cache et l'image en
+//! cours), à une résolution interne plafonnée (au-delà de ~2,2 millions de pixels, l'image est calculée plus
+//! petite puis agrandie par GDI) ; un garde-fou mesure la mémoire du processus et allège les caches du jeu,
+//! puis la résolution interne, si elle approche de la limite.
+//!
+//! Le fond (décor + tout ce qui ne bouge pas) est refait seulement quand son empreinte ou la taille change ;
+//! chaque image recopie ce fond puis dessine ce qui bouge. Rien n'est redessiné quand rien ne change.
 
 use crate::gfx::{Gfx, Glyphs, WH, WW};
 use std::cell::RefCell;
-use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 use tiny_skia::Pixmap;
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
 use winit::event::{ElementState, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, OwnedDisplayHandle};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key as WKey, NamedKey};
 use winit::window::{Fullscreen, Window, WindowId};
+
+/// Limite de mémoire d'un jeu (octets) et seuil d'alerte du garde-fou.
+pub const LIMITE_RAM: usize = 50 << 20;
+const ALERTE_RAM: usize = 44 << 20;
+/// Pixels de l'image interne au plus (1920 x 1080 = 2,07 millions).
+const PIXELS_MAX: f64 = 2.2e6;
 
 /// Touches utiles au jeu.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -31,9 +43,13 @@ pub trait Game {
     fn title(&self) -> String;
     /// Nom du fichier de capture (F12).
     fn shot_name(&self) -> &str;
-    /// Décor fixe (mis en cache).
+    /// Empreinte du fond : quand elle change, `background` est redessiné (sinon le fond reste en cache).
+    fn fond_signature(&self) -> u64 {
+        0
+    }
+    /// Fond : décor et tout ce qui ne bouge pas (mis en cache).
     fn background(&mut self, g: &Gfx);
-    /// Tout ce qui se dessine par-dessus le décor.
+    /// Tout ce qui se dessine par-dessus le fond.
     fn draw(&mut self, g: &Gfx);
     /// Avance le temps ; renvoie vrai si l'image a changé.
     fn tick(&mut self, dt_ms: f64) -> bool;
@@ -47,19 +63,148 @@ pub trait Game {
     /// Plein écran voulu par le jeu.
     fn fullscreen(&self) -> bool;
     fn quit(&self) -> bool;
+    /// La mémoire approche de la limite : vider les caches (ils se refont à la demande).
+    fn alleger(&mut self) {}
+}
+
+/// Mémoire du processus (octets de l'ensemble de travail), si le système sait la donner.
+pub fn memoire() -> Option<usize> {
+    #[cfg(windows)]
+    {
+        gdi::memoire()
+    }
+    #[cfg(not(windows))]
+    {
+        let s = std::fs::read_to_string("/proc/self/statm").ok()?;
+        let pages: usize = s.split_whitespace().nth(1)?.parse().ok()?;
+        Some(pages * 4096)
+    }
+}
+
+#[cfg(windows)]
+mod gdi {
+    use std::ffi::c_void;
+    use tiny_skia::Pixmap;
+
+    #[repr(C)]
+    struct BitmapInfo {
+        size: u32,
+        width: i32,
+        height: i32,
+        planes: u16,
+        bit_count: u16,
+        compression: u32,
+        size_image: u32,
+        xppm: i32,
+        yppm: i32,
+        clr_used: u32,
+        clr_important: u32,
+        couleurs: [u32; 4],
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Compteurs {
+        cb: u32,
+        defauts: u32,
+        pic: usize,
+        travail: usize,
+        _autres: [usize; 6],
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetDC(hwnd: isize) -> isize;
+        fn ReleaseDC(hwnd: isize, hdc: isize) -> i32;
+    }
+    #[link(name = "gdi32")]
+    extern "system" {
+        fn StretchDIBits(
+            hdc: isize,
+            xd: i32,
+            yd: i32,
+            wd: i32,
+            hd: i32,
+            xs: i32,
+            ys: i32,
+            ws: i32,
+            hs: i32,
+            bits: *const c_void,
+            bmi: *const BitmapInfo,
+            usage: u32,
+            rop: u32,
+        ) -> i32;
+        fn SetStretchBltMode(hdc: isize, mode: i32) -> i32;
+        fn SetBrushOrgEx(hdc: isize, x: i32, y: i32, pt: *mut c_void) -> i32;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentProcess() -> isize;
+        fn K32GetProcessMemoryInfo(p: isize, c: *mut Compteurs, cb: u32) -> i32;
+    }
+
+    /// Affiche l'image (agrandie à w x h si besoin). L'image est convertie sur place en BGRA :
+    /// elle n'est plus utilisable ensuite (elle est refaite à partir du fond à l'image suivante).
+    pub fn afficher(hwnd: isize, pm: &mut Pixmap, w: i32, h: i32) {
+        let (pw, ph) = (pm.width() as i32, pm.height() as i32);
+        for px in pm.data_mut().chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+        let bmi = BitmapInfo {
+            size: 40,
+            width: pw,
+            height: -ph, // de haut en bas
+            planes: 1,
+            bit_count: 32,
+            compression: 0,
+            size_image: 0,
+            xppm: 0,
+            yppm: 0,
+            clr_used: 0,
+            clr_important: 0,
+            couleurs: [0; 4],
+        };
+        unsafe {
+            let hdc = GetDC(hwnd);
+            if hdc == 0 {
+                return;
+            }
+            if pw != w || ph != h {
+                SetStretchBltMode(hdc, 4); // HALFTONE : agrandissement lissé
+                SetBrushOrgEx(hdc, 0, 0, std::ptr::null_mut());
+            } else {
+                SetStretchBltMode(hdc, 3); // COLORONCOLOR : copie directe
+            }
+            StretchDIBits(hdc, 0, 0, w, h, 0, 0, pw, ph, pm.data().as_ptr() as *const c_void, &bmi, 0, 0x00CC0020);
+            ReleaseDC(hwnd, hdc);
+        }
+    }
+
+    pub fn memoire() -> Option<usize> {
+        let mut c = Compteurs { cb: std::mem::size_of::<Compteurs>() as u32, ..Default::default() };
+        unsafe { (K32GetProcessMemoryInfo(GetCurrentProcess(), &mut c, c.cb) != 0).then_some(c.travail) }
+    }
 }
 
 struct App<G: Game> {
     g: G,
-    ctx: softbuffer::Context<OwnedDisplayHandle>,
+    #[cfg(not(windows))]
+    ctx: softbuffer::Context<winit::event_loop::OwnedDisplayHandle>,
+    #[cfg(not(windows))]
+    surf: Option<softbuffer::Surface<winit::event_loop::OwnedDisplayHandle, Rc<Window>>>,
     win: Option<Rc<Window>>,
-    surf: Option<softbuffer::Surface<OwnedDisplayHandle, Rc<Window>>>,
     glyphs: RefCell<Glyphs>,
-    bg: Option<Pixmap>,
+    /// fond en cache et son empreinte
+    fond: Option<Pixmap>,
+    fond_sig: Option<u64>,
     frame: Option<Pixmap>,
+    /// plafond de pixels de l'image interne (baisse si le garde-fou le demande)
+    pixels_max: f64,
     last: Instant,
     /// instant de la dernière image affichée (rythme plafonné pendant les animations)
     last_frame: Instant,
+    /// dernier contrôle de la mémoire
+    controle: Instant,
     dirty: bool,
     fs: bool,
     mouse: (f64, f64),
@@ -77,25 +222,39 @@ impl<G: Game> App<G> {
         ((x as f32 - ox) / sc, (y as f32 - oy) / sc)
     }
 
+    /// Taille de l'image interne pour une fenêtre w x h (plafonnée en pixels).
+    fn taille_interne(&self, w: u32, h: u32) -> (u32, u32) {
+        let k = (self.pixels_max / (w as f64 * h as f64)).sqrt().min(1.0);
+        (((w as f64 * k).round() as u32).max(1), ((h as f64 * k).round() as u32).max(1))
+    }
+
     fn render(&mut self) {
-        let (Some(win), Some(surf)) = (&self.win, &mut self.surf) else { return };
+        let Some(win) = self.win.clone() else { return };
         let size = win.inner_size();
-        let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else { return };
-        // décor : refait seulement si la taille a changé
-        if self.bg.as_ref().map(|b| (b.width(), b.height())) != Some((w.get(), h.get())) {
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        let (iw, ih) = self.taille_interne(size.width, size.height);
+        if self.fond.as_ref().map(|b| (b.width(), b.height())) != Some((iw, ih)) {
+            // nouvelle taille : on libère d'abord les anciennes images (pas de pic de mémoire)
+            self.fond = None;
+            self.frame = None;
             self.glyphs.borrow_mut().clear();
-            let mut bg = Pixmap::new(w.get(), h.get()).unwrap();
-            bg.fill(tiny_skia::Color::BLACK);
-            {
-                let g = Gfx::fit(&mut bg, &self.glyphs);
+            self.fond = Pixmap::new(iw, ih);
+            self.frame = Pixmap::new(iw, ih);
+            self.fond_sig = None;
+        }
+        let sig = self.g.fond_signature();
+        if self.fond_sig != Some(sig) {
+            if let Some(fond) = &mut self.fond {
+                fond.fill(tiny_skia::Color::BLACK);
+                let g = Gfx::fit(fond, &self.glyphs);
                 self.g.background(&g);
             }
-            self.bg = Some(bg);
-            self.frame = Pixmap::new(w.get(), h.get());
-            let _ = surf.resize(w, h);
+            self.fond_sig = Some(sig);
         }
-        let (Some(bg), Some(frame)) = (&self.bg, &mut self.frame) else { return };
-        frame.data_mut().copy_from_slice(bg.data());
+        let (Some(fond), Some(frame)) = (&self.fond, &mut self.frame) else { return };
+        frame.data_mut().copy_from_slice(fond.data());
         {
             let g = Gfx::fit(frame, &self.glyphs);
             self.g.draw(&g);
@@ -104,13 +263,58 @@ impl<G: Game> App<G> {
             self.shot = false;
             let _ = frame.save_png(self.g.shot_name());
         }
-        let Ok(mut buf) = surf.buffer_mut() else { return };
-        for (d, s) in buf.iter_mut().zip(frame.pixels()) {
-            *d = (s.red() as u32) << 16 | (s.green() as u32) << 8 | s.blue() as u32;
-        }
-        let _ = buf.present();
+        self.afficher(&win, size.width, size.height);
         self.dirty = false;
         self.last_frame = Instant::now();
+    }
+
+    #[cfg(windows)]
+    fn afficher(&mut self, win: &Window, w: u32, h: u32) {
+        use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        let Some(frame) = &mut self.frame else { return };
+        if let Ok(RawWindowHandle::Win32(hd)) = win.window_handle().map(|h| h.as_raw()) {
+            gdi::afficher(hd.hwnd.get(), frame, w as i32, h as i32);
+        }
+    }
+
+    #[cfg(not(windows))]
+    fn afficher(&mut self, _win: &Window, w: u32, h: u32) {
+        use std::num::NonZeroU32;
+        let (Some(frame), Some(surf)) = (&self.frame, &mut self.surf) else { return };
+        let (Some(nw), Some(nh)) = (NonZeroU32::new(w), NonZeroU32::new(h)) else { return };
+        let _ = surf.resize(nw, nh);
+        let Ok(mut buf) = surf.buffer_mut() else { return };
+        // agrandissement au plus proche si l'image interne est plus petite que la fenêtre
+        let (fw, fh) = (frame.width() as usize, frame.height() as usize);
+        let px = frame.pixels();
+        for y in 0..h as usize {
+            let sy = (y * fh / h as usize).min(fh - 1);
+            for x in 0..w as usize {
+                let s = px[sy * fw + (x * fw / w as usize).min(fw - 1)];
+                buf[y * w as usize + x] = (s.red() as u32) << 16 | (s.green() as u32) << 8 | s.blue() as u32;
+            }
+        }
+        let _ = buf.present();
+    }
+
+    /// Garde-fou : si la mémoire approche de la limite, vider les caches puis baisser la résolution interne.
+    fn surveiller(&mut self) {
+        if self.controle.elapsed() < Duration::from_secs(2) {
+            return;
+        }
+        self.controle = Instant::now();
+        let Some(m) = memoire() else { return };
+        if m > ALERTE_RAM {
+            self.g.alleger();
+            self.glyphs.borrow_mut().clear();
+            self.fond_sig = None;
+            if memoire().unwrap_or(0) > ALERTE_RAM {
+                self.pixels_max = (self.pixels_max * 0.8).max(0.5e6);
+                self.fond = None;
+                self.frame = None;
+            }
+            self.dirty = true;
+        }
     }
 
     fn sync_fullscreen(&mut self) {
@@ -140,7 +344,10 @@ impl<G: Game> ApplicationHandler for App<G> {
             return;
         };
         let win = Rc::new(win);
-        self.surf = softbuffer::Surface::new(&self.ctx, win.clone()).ok();
+        #[cfg(not(windows))]
+        {
+            self.surf = softbuffer::Surface::new(&self.ctx, win.clone()).ok();
+        }
         self.win = Some(win);
         self.sync_fullscreen();
         self.dirty = true;
@@ -200,6 +407,7 @@ impl<G: Game> ApplicationHandler for App<G> {
             el.exit();
             return;
         }
+        self.surveiller();
         // au plus ~60 images/s : pendant une animation, on attend que l'image précédente ait 16 ms
         const FRAME: Duration = Duration::from_millis(16);
         let next_frame = self.last_frame + FRAME;
@@ -228,17 +436,23 @@ pub fn run<G: Game>(g: G) {
         }
         Err(e) => return eprintln!("Impossible d'ouvrir une fenêtre : {e}"),
     };
+    #[cfg(not(windows))]
     let Ok(ctx) = softbuffer::Context::new(el.owned_display_handle()) else { return };
     let mut app = App {
         g,
+        #[cfg(not(windows))]
         ctx,
-        win: None,
+        #[cfg(not(windows))]
         surf: None,
+        win: None,
         glyphs: RefCell::new(Glyphs::default()),
-        bg: None,
+        fond: None,
+        fond_sig: None,
         frame: None,
+        pixels_max: PIXELS_MAX,
         last: Instant::now(),
         last_frame: Instant::now(),
+        controle: Instant::now(),
         dirty: true,
         fs: false,
         mouse: (0.0, 0.0),

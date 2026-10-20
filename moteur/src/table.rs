@@ -147,14 +147,25 @@ pub fn main_touchee(n: usize, x: f32, y: f32) -> Option<usize> {
     (0..n).rev().find(|&i| (x as f64 - main_x(i, n)).abs() <= 52.0)
 }
 
-/// Transformation du i-ème dos de la main d'un adversaire (n cartes) à la place `pl`.
-pub fn dos_adversaire(pl: &Place, i: usize, n: usize) -> Xf {
+/// Centre du i-ème dos de la main d'un adversaire (n cartes) à la place `pl`.
+pub fn pos_dos(pl: &Place, i: usize, n: usize) -> (f64, f64) {
     let pas = if n > 1 { pl.pas.min(pl.largeur / (n - 1) as f64) } else { pl.pas };
     // même arrondi que la version d'origine : i * pas - ((n - 1) * pas) / 2 en entier
     let off = i as f64 * pas - (((n.max(1) - 1) as f64 * pas) as i64 / 2) as f64;
     if pl.rotation == 0.0 {
-        Xf::place(pl.main.0 + off, pl.main.1, 0.62, 0.0, 1.0)
+        (pl.main.0 + off, pl.main.1)
     } else {
-        Xf::place(pl.main.0, pl.main.1 + off, 0.62, pl.rotation, 1.0)
+        (pl.main.0, pl.main.1 + off)
     }
+}
+
+/// Transformation du i-ème dos de la main d'un adversaire (n cartes) à la place `pl`.
+pub fn dos_adversaire(pl: &Place, i: usize, n: usize) -> Xf {
+    let (x, y) = pos_dos(pl, i, n);
+    Xf::place(x, y, 0.62, pl.rotation, 1.0)
+}
+
+/// Paquet du donneur : entre sa main et le centre de la table (d'où partent les cartes distribuées).
+pub fn paquet_donneur(pl: &Place) -> (f64, f64) {
+    (pl.main.0 + (550.0 - pl.main.0) * 0.35, pl.main.1 + (352.0 - pl.main.1) * 0.35)
 }

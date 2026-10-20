@@ -6,6 +6,9 @@ description = "Moteur commun des jeux de bistrot : fenetre, rendu processeur, ta
 
 [dependencies]
 winit = "0.30"
-softbuffer = "0.4"
 tiny-skia = "0.11"
 ab_glyph = "0.2"
+
+# Windows : affichage direct par GDI ; ailleurs, softbuffer (X11 / Wayland)
+[target.'cfg(not(windows))'.dependencies]
+softbuffer = "0.4"

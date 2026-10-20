@@ -1,24 +1,52 @@
-"""Outils de test : recadrage PNG agrandi.  python tools.py crop in.png out.png x0 y0 x1 y1 [zoom]"""
+"""Outils de test : recadrage PNG agrandi.  python tools.py crop in.png out.png x0 y0 x1 y1 [zoom]
+Lit les PNG 8 bits RGB ou RGBA, avec tous les filtres de ligne (ceux des captures F12 des jeux)."""
 import sys, struct, zlib
 
 
 def read_png(path):
+    """-> (largeur, hauteur, lignes en RGB)"""
     d = open(path, 'rb').read()
     pos = 8
     idat = b''
-    w = h = 0
+    w = h = ctype = 0
     while pos < len(d):
         n = struct.unpack('>I', d[pos:pos + 4])[0]
         typ = d[pos + 4:pos + 8]
         body = d[pos + 8:pos + 8 + n]
         if typ == b'IHDR':
             w, h = struct.unpack('>II', body[:8])
+            ctype = body[9]
         elif typ == b'IDAT':
             idat += body
         pos += 12 + n
     raw = zlib.decompress(idat)
-    stride = w * 3 + 1
-    rows = [raw[i * stride + 1:(i + 1) * stride] for i in range(h)]
+    bpp = 4 if ctype == 6 else 3
+    stride = w * bpp
+    rows, prev = [], bytearray(stride)
+    for y in range(h):
+        f = raw[y * (stride + 1)]
+        cur = bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+        for i in range(stride):
+            a = cur[i - bpp] if i >= bpp else 0
+            b = prev[i]
+            c = prev[i - bpp] if i >= bpp else 0
+            if f == 1:
+                cur[i] = (cur[i] + a) & 255
+            elif f == 2:
+                cur[i] = (cur[i] + b) & 255
+            elif f == 3:
+                cur[i] = (cur[i] + (a + b) // 2) & 255
+            elif f == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                cur[i] = (cur[i] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        prev = cur
+        if bpp == 4:
+            rgb = bytearray(w * 3)
+            rgb[0::3], rgb[1::3], rgb[2::3] = cur[0::4], cur[1::4], cur[2::4]
+            rows.append(bytes(rgb))
+        else:
+            rows.append(bytes(cur))
     return w, h, rows
 
 

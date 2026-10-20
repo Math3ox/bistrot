@@ -91,6 +91,8 @@ Depuis la racine du dépôt : `build.bat` (Windows) ou `cargo build --release -p
 - `src/table.rs` : déroulement (tours des bots, délais, animations, bulles, aide, actions en ligne) ; jeu en ligne
   (`bistrot::reseau::Partie`).
 - `src/draw.rs` : dessin de la scène avec le moteur (cartes, places, animations, panneaux, force des cartes).
+- `src/vue.rs` : ce qui bouge à l'écran sans toucher à la partie : distribution des cartes, main qui se réarrange,
+  levée au survol, retourne qui se retourne, bulles, score qui défile.
 - `src/main.rs` : le jeu dans sa fenêtre (`bistrot::shell::Game` : touches, clics, couche fixe en cache), `-sim`.
 - `src/cfg.rs` : réglages mémorisés dans `belote.cfg`.
 - Fenêtre, dessin, cartes, table, réseau : moteur commun `../moteur` (crate `bistrot`).

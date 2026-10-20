@@ -64,11 +64,32 @@ impl Xf {
         }
     }
 
+    /// Objet centré en (cx, cy) agrandi de s (sans rotation).
+    pub fn centre(cx: f32, cy: f32, s: f32) -> Xf {
+        Xf { a: s, b: 0.0, c: 0.0, d: s, tx: cx, ty: cy }
+    }
+
+    /// Demi-tour autour de l'origine du repère (figures et indices « à double tête »).
+    pub const DEMI_TOUR: Xf = Xf { a: -1.0, b: 0.0, c: 0.0, d: -1.0, tx: 0.0, ty: 0.0 };
+
+    /// Composition : d'abord `l` (repère local), puis `self`.
+    pub fn puis(&self, l: &Xf) -> Xf {
+        Xf {
+            a: self.a * l.a + self.c * l.b,
+            b: self.b * l.a + self.d * l.b,
+            c: self.a * l.c + self.c * l.d,
+            d: self.b * l.c + self.d * l.d,
+            tx: self.a * l.tx + self.c * l.ty + self.tx,
+            ty: self.b * l.tx + self.d * l.ty + self.ty,
+        }
+    }
+
     fn ts(&self) -> Transform {
         Transform::from_row(self.a, self.b, self.c, self.d, self.tx, self.ty)
     }
 
-    fn scale(&self) -> f32 {
+    /// Facteur d'agrandissement moyen.
+    pub fn scale(&self) -> f32 {
         (self.a * self.d - self.b * self.c).abs().sqrt()
     }
 }
@@ -104,6 +125,19 @@ fn win_ascent(b: &[u8]) -> Option<f32> {
     (upem > 0.0).then(|| asc / upem)
 }
 
+/// Chemin du fichier de police choisi par fontconfig pour un motif (Linux / BSD).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn fc_match(pattern: &str) -> Option<String> {
+    let out = std::process::Command::new("fc-match").args(["-f", "%{file}", pattern]).output().ok()?;
+    let path = String::from_utf8(out.stdout).ok()?;
+    (out.status.success() && !path.is_empty()).then_some(path)
+}
+
+#[cfg(not(all(unix, not(target_os = "macos"))))]
+fn fc_match(_pattern: &str) -> Option<String> {
+    None
+}
+
 /// Fichier de police (le premier qui existe dans la liste ; lu à la demande, sans prétraitement).
 pub struct FontFile {
     font: Option<(usize, Rc<FontVec>)>,
@@ -111,17 +145,22 @@ pub struct FontFile {
 }
 
 impl FontFile {
-    pub fn load(paths: &[&str]) -> FontFile {
-        for p in paths {
-            if let Ok(bytes) = std::fs::read(p) {
-                let asc = win_ascent(&bytes).unwrap_or(0.95);
-                if let Ok(font) = FontVec::try_from_vec(bytes) {
-                    let id = NEXT_FONT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    return FontFile { font: Some((id, Rc::new(font))), asc };
-                }
-            }
-        }
-        FontFile { font: None, asc: 0.8 }
+    /// `fc` : motif fontconfig (ex. « sans-serif:bold ») demandé à `fc-match` si aucun chemin n'existe
+    /// (sous Linux, les polices installées varient d'une distribution à l'autre : Fedora n'a que Noto).
+    pub fn load(paths: &[&str], fc: &str) -> FontFile {
+        paths
+            .iter()
+            .find_map(|p| Self::open(p))
+            .or_else(|| Self::open(&fc_match(fc)?))
+            .unwrap_or(FontFile { font: None, asc: 0.8 })
+    }
+
+    fn open(path: &str) -> Option<FontFile> {
+        let bytes = std::fs::read(path).ok()?;
+        let asc = win_ascent(&bytes).unwrap_or(0.95);
+        let font = FontVec::try_from_vec(bytes).ok()?;
+        let id = NEXT_FONT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Some(FontFile { font: Some((id, Rc::new(font))), asc })
     }
 
     pub fn face(&self, size: f32) -> Face {
@@ -222,6 +261,49 @@ impl<'a> Gfx<'a> {
         Transform::from_row(self.sc, 0.0, 0.0, self.sc, self.ox, self.oy)
     }
 
+    /// Forme quelconque (chemin tiny-skia en coordonnées de l'objet), pleine et/ou avec un contour d'épaisseur w.
+    pub fn forme(&self, xf: &Xf, path: &tiny_skia::Path, fill: Option<Color>, line: Option<Color>, w: f32) {
+        self.path(xf, Some(path.clone()), fill, line, w);
+    }
+
+    /// Rectangle arrondi rempli d'un dégradé vertical (haut -> bas), avec contour éventuel.
+    pub fn rrect_degrade(&self, xf: &Xf, x: f32, y: f32, w: f32, h: f32, r: f32, haut: Color, bas: Color, line: Option<Color>) {
+        let Some(path) = Self::poly_path(&Self::rrect_pts(x, y, w, h, r)) else { return };
+        let tc = |c: Color| tiny_skia::Color::from_rgba(c.r, c.g, c.b, c.a).unwrap_or(tiny_skia::Color::BLACK);
+        let shader = tiny_skia::LinearGradient::new(
+            tiny_skia::Point::from_xy(0.0, y),
+            tiny_skia::Point::from_xy(0.0, y + h),
+            vec![tiny_skia::GradientStop::new(0.0, tc(haut)), tiny_skia::GradientStop::new(1.0, tc(bas))],
+            tiny_skia::SpreadMode::Pad,
+            Transform::identity(),
+        );
+        if let Some(shader) = shader {
+            let paint = Paint { shader, anti_alias: true, ..Default::default() };
+            let ts = self.view().pre_concat(xf.ts());
+            self.pm.borrow_mut().fill_path(&path, &paint, FillRule::Winding, ts, None);
+        }
+        if line.is_some() {
+            self.path(xf, Some(path), None, line, 0.6);
+        }
+    }
+
+    fn rrect_pts(x: f32, y: f32, w: f32, h: f32, r: f32) -> Vec<(f32, f32)> {
+        let r = r.min(w / 2.0).min(h / 2.0);
+        let mut pts = Vec::with_capacity(40);
+        if r <= 0.0 {
+            pts.extend([(x, y), (x + w, y), (x + w, y + h), (x, y + h)]);
+        } else {
+            let corners = [(x + w - r, y + r, -90.0f32), (x + w - r, y + h - r, 0.0), (x + r, y + h - r, 90.0), (x + r, y + r, 180.0)];
+            for (cx, cy, a0) in corners {
+                for k in 0..=8 {
+                    let a = (a0 + k as f32 * 11.25).to_radians();
+                    pts.push((cx + r * a.cos(), cy + r * a.sin()));
+                }
+            }
+        }
+        pts
+    }
+
     fn path(&self, xf: &Xf, path: Option<tiny_skia::Path>, fill: Option<Color>, line: Option<Color>, w: f32) {
         let Some(path) = path else { return };
         let ts = self.view().pre_concat(xf.ts());
@@ -264,20 +346,7 @@ impl<'a> Gfx<'a> {
 
     /// Rectangle arrondi (rayon r).
     pub fn rrect(&self, xf: &Xf, x: f32, y: f32, w: f32, h: f32, r: f32, fill: Option<Color>, line: Option<Color>) {
-        let r = r.min(w / 2.0).min(h / 2.0);
-        let mut pts = Vec::with_capacity(40);
-        if r <= 0.0 {
-            pts.extend([(x, y), (x + w, y), (x + w, y + h), (x, y + h)]);
-        } else {
-            let corners = [(x + w - r, y + r, -90.0f32), (x + w - r, y + h - r, 0.0), (x + r, y + h - r, 90.0), (x + r, y + r, 180.0)];
-            for (cx, cy, a0) in corners {
-                for k in 0..=8 {
-                    let a = (a0 + k as f32 * 11.25).to_radians();
-                    pts.push((cx + r * a.cos(), cy + r * a.sin()));
-                }
-            }
-        }
-        self.poly(xf, &pts, fill, line);
+        self.poly(xf, &Self::rrect_pts(x, y, w, h, r), fill, line);
     }
 
     pub fn ellipse(&self, xf: &Xf, cx: f32, cy: f32, rx: f32, ry: f32, fill: Option<Color>, line: Option<Color>) {
@@ -303,7 +372,15 @@ impl<'a> Gfx<'a> {
             self.pm.borrow_mut().draw_pixmap(x, y, img.as_ref(), &paint, Transform::identity(), None);
             return;
         }
-        let paint = PixmapPaint { quality: tiny_skia::FilterQuality::Bilinear, ..Default::default() };
+        if ts.kx == 0.0 && ts.ky == 0.0 && (ts.sx.abs() - 1.0).abs() < 1e-3 && (ts.sy.abs() - 1.0).abs() < 1e-3 {
+            // retournée sans changer d'échelle (indices et figures « à double tête ») : pixels recopiés
+            let paint = PixmapPaint { quality: tiny_skia::FilterQuality::Nearest, ..Default::default() };
+            let t = Transform::from_row(ts.sx.signum(), 0.0, 0.0, ts.sy.signum(), ts.tx.round(), ts.ty.round());
+            self.pm.borrow_mut().draw_pixmap(0, 0, img.as_ref(), &paint, t, None);
+            return;
+        }
+        // agrandie, réduite ou tournée : filtre bicubique (plus net que le bilinéaire)
+        let paint = PixmapPaint { quality: tiny_skia::FilterQuality::Bicubic, ..Default::default() };
         self.pm.borrow_mut().draw_pixmap(0, 0, img.as_ref(), &paint, ts, None);
     }
 

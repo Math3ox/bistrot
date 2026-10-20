@@ -3,11 +3,11 @@
 
 use crate::gfx::{Face, FontFile};
 
-/// Les quatre fichiers de police utilisés par les jeux.
+/// Les trois fichiers de police utilisés par les jeux (les symboles ♠ ♥ ♦ ♣ et ★ sont dessinés en formes
+/// vectorielles : pas de police de symboles à charger).
 pub struct Fichiers {
     pub gras: FontFile,
     pub demi: FontFile,
-    pub symboles: FontFile,
     pub serif: FontFile,
 }
 
@@ -19,7 +19,7 @@ impl Fichiers {
             "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
             "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
             "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-        ]);
+        ], "sans-serif:bold");
         let demi = FontFile::load(&[
             "C:\\Windows\\Fonts\\seguisb.ttf",
             "C:\\Windows\\Fonts\\segoeui.ttf",
@@ -27,22 +27,15 @@ impl Fichiers {
             "/usr/share/fonts/TTF/DejaVuSans.ttf",
             "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
             "/System/Library/Fonts/Supplemental/Arial.ttf",
-        ]);
-        let symboles = FontFile::load(&[
-            "C:\\Windows\\Fonts\\seguisym.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-            "/System/Library/Fonts/Apple Symbols.ttf",
-        ]);
+        ], "sans-serif:semibold");
         let serif = FontFile::load(&[
             "C:\\Windows\\Fonts\\georgiab.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
             "/usr/share/fonts/TTF/DejaVuSerif-Bold.ttf",
             "/usr/share/fonts/dejavu-serif-fonts/DejaVuSerif-Bold.ttf",
             "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
-        ]);
-        Fichiers { gras, demi, symboles, serif }
+        ], "serif:bold");
+        Fichiers { gras, demi, serif }
     }
 }
 
@@ -53,7 +46,6 @@ pub struct Polices {
     pub petit: Face,
     pub bouton: Face,
     pub moyen: Face,
-    pub symbole: Face,
 }
 
 impl Polices {
@@ -64,7 +56,6 @@ impl Polices {
             petit: f.demi.face(15.0),
             bouton: f.gras.face(22.0),
             moyen: f.gras.face(28.0),
-            symbole: f.symboles.face(50.0),
         }
     }
 }
