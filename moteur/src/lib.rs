@@ -5,6 +5,7 @@
 //! - [`polices`] : polices du système (gothique et Palatino sous Windows, équivalents sous Linux), lues à la demande.
 //! - [`cartes`] : cartes enluminées (jeux de 32, 52, jokers, tarot), dessinées une fois puis posées.
 //! - [`table`] : décor de taverne (plancher, table de chêne, chandelles) en cache, places de 2 à 5 joueurs autour.
+//! - [`atouts`] : les 21 atouts illustrés du tarot (deux scènes du Tarot Nouveau chacun) et l'Excuse.
 //! - [`anim`] : interrupteur des animations (auto, oui, non) ; carte envoyée en arc avec son ombre, ramassage du pli.
 //! - [`iso`] : projection isométrique 3D (jeux de dés : cylindres, ombres, texte couché).
 //! - [`ui`] : parchemins (panneaux, étiquettes de joueurs, bulles), boutons, pièce du donneur.
@@ -15,6 +16,7 @@
 //! [`shell::Game`] pour la fenêtre et [`reseau::Partie`] pour le jeu en ligne.
 
 pub mod anim;
+pub mod atouts;
 pub mod cartes;
 pub mod gfx;
 pub mod iso;

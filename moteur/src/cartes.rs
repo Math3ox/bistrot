@@ -381,14 +381,15 @@ pub const Y1: f32 = 84.0;
 
 pub struct PolicesCartes {
     serif: Face,
-    serif_grand: Face,
-    serif_moyen: Face,
     serif_petit: Face,
+    /// numéros des atouts (un ou deux chiffres)
+    index: Face,
+    index_petit: Face,
 }
 
 impl PolicesCartes {
     pub fn depuis(f: &Fichiers) -> PolicesCartes {
-        PolicesCartes { serif: f.livre.face(26.0), serif_grand: f.livre.face(40.0), serif_moyen: f.livre.face(31.0), serif_petit: f.livre.face(13.0) }
+        PolicesCartes { serif: f.livre.face(26.0), serif_petit: f.livre.face(13.0), index: f.livre.face(24.0), index_petit: f.livre.face(19.5) }
     }
 }
 
@@ -608,33 +609,15 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
             }
         }
         Carte::Atout(n) => {
-            // les bouts (1 et 21) sur fond pourpre, les autres atouts sur fond outremer
-            let bout = n == 1 || n == 21;
-            papier(g, C_GOLDF);
-            let s = n.to_string();
-            indices(g, f, &s, Signe::Etoile, C_CBLK);
-            fond_enlumine(g, bout);
-            medaillon(g);
-            let face = if n >= 10 { &f.serif_moyen } else { &f.serif_grand };
-            g.text(&s, 0., crate::ui::centre_v(face, -8.), face, C_CBLK, Align::Center);
-            g.text("ATOUT", 0., 25., &f.serif_petit, C_GOLDHI, Align::Center);
-            if bout {
-                for (x, y) in [(-21., -42.), (21., -42.), (-21., 42.), (21., 42.)] {
-                    etoile(g, &id, x, y, 4.5, C_GOLDHI);
-                }
-            }
+            // deux scènes du Tarot Nouveau ; cartouche doré pour les bouts (1 et 21)
+            velin(g);
+            crate::atouts::illustration(g, n);
+            cartouches(g, f, Some(&n.to_string()), n == 1 || n == 21);
         }
         Carte::Excuse => {
-            papier(g, C_GOLDF);
-            etoile(g, &id, -36., -56., 7., C_CBLK);
-            etoile(g, &id, 36., 56., 7., C_CBLK);
-            fond_enlumine(g, true);
-            medaillon(g);
-            etoile(g, &id, 0., -8., 16., C_CBLK);
-            g.text("EXCUSE", 0., 25., &f.serif_petit, C_GOLDHI, Align::Center);
-            for (x, y) in [(-21., -42.), (21., -42.), (-21., 42.), (21., 42.)] {
-                etoile(g, &id, x, y, 4.5, C_GOLDHI);
-            }
+            velin(g);
+            crate::atouts::illustration_excuse(g);
+            cartouches(g, f, None, true);
         }
         Carte::Joker(rouge) => {
             let (encre, filet) = if rouge { (C_CRED, C_TRED) } else { (C_CBLK, C_TBLK) };
@@ -648,27 +631,33 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
     }
 }
 
-/// Fond des atouts : losanges d'or sur outremer (pourpre pour les bouts), cadre doré.
-fn fond_enlumine(g: &Gfx, bout: bool) {
-    let id = Xf::ID;
-    let (hi, lo) = if bout { (C_POURPRE_HI, C_POURPRE_LO) } else { (C_LAPIS_HI, C_LAPIS_LO) };
-    if let Some(p) = chemin_rrect(-30., -52., 60., 104., 7.) {
-        g.lineaire(&id, &p, (0., -52.), (0., 52.), &[(0.0, lo), (0.5, hi), (1.0, lo)]);
-    }
-    losanges(g, -28.5, -50.5, 28.5, 50.5, 8., alpha(C_GOLDF, 0.42), 0.35, Some(alpha(C_GOLDHI, 0.8)));
-    g.rrect_w(&id, -30., -52., 60., 104., 7., None, Some(C_GOLDF), 1.3);
-    g.rrect(&id, -30., -52., 60., 104., 7., None, Some(C_GOLDLN));
+/// Vélin seul (atouts illustrés).
+fn velin(g: &Gfx) {
+    ombre(g);
+    g.rrect_degrade(&Xf::ID, -50., -70., 100., 140., 12., C_PAPER_HI, C_PAPER_LO, Some(C_CLN2));
 }
 
-/// Médaillon de vélin cerclé d'or (numéro des atouts, étoile de l'excuse).
-fn medaillon(g: &Gfx) {
-    let id = Xf::ID;
-    if let Some(p) = chemin_ellipse(0., -8., 23., 23.) {
-        g.radial(&id, &p, (-6., -16.), 32., &[(0.0, C_PAPER_HI), (1.0, C_PANEL_LO)]);
-        g.forme(&id, &p, None, Some(C_GOLDF), 2.6);
+/// Cartouches des atouts : numéro (ou étoile pour l'Excuse) sur un petit cadre de vélin, doré pour les bouts,
+/// en haut à gauche et, retourné, en bas à droite : lisible quand les cartes se chevauchent dans la main.
+fn cartouches(g: &Gfx, f: &PolicesCartes, texte: Option<&str>, bout: bool) {
+    let (x0, y0, w, h) = (-49.5f32, -69.5f32, 23.0f32, 26.0f32);
+    let ppu = g.sc;
+    let Some(mut img) = Pixmap::new(((w + 1.) * ppu).ceil() as u32, ((h + 1.) * ppu).ceil() as u32) else { return };
+    {
+        let gi = Gfx::new(&mut img, g.glyphs(), ppu, -(x0 - 0.5) * ppu, -(y0 - 0.5) * ppu);
+        let fond = if bout { C_GOLDHI } else { C_PAPER_HI };
+        gi.rrect_w(&Xf::ID, x0, y0, w, h, 4., Some(fond), Some(C_GOLDLN), 0.7);
+        let (cx, cy) = (x0 + w / 2., y0 + h / 2.);
+        match texte {
+            Some(t) => {
+                let face = if t.len() > 1 { &f.index_petit } else { &f.index };
+                gi.text(t, cx, crate::ui::centre_v(face, cy), face, C_CBLK, Align::Center);
+            }
+            None => etoile(&gi, &Xf::ID, cx, cy, 7., C_CBLK),
+        }
     }
-    g.ellipse(&id, 0., -8., 25.4, 25.4, None, Some(C_GOLDLN));
-    g.ellipse(&id, 0., -8., 20.5, 20.5, None, Some(C_GOLDLN));
+    g.image(&Xf::ID, &img, x0 - 0.5, y0 - 0.5, ppu);
+    g.image(&Xf::DEMI_TOUR, &img, x0 - 0.5, y0 - 0.5, ppu);
 }
 
 /// Dos : pourpre à losanges dorés perlés, double cadre doré, médaillon outremer à la fleur de lys.

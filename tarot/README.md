@@ -1,8 +1,10 @@
 # Tarot en 3D isométrique (Rust, Windows / Linux / macOS)
 
 Tarot à 3, 4 ou 5 joueurs contre des bots (ou en ligne avec des amis), selon les règles de la Fédération française de
-tarot : table ronde en perspective dans une taverne aux chandelles, cartes enluminées (78 cartes : atouts sur fond
-outremer, bouts sur fond pourpre), animations. Construit sur le moteur commun `bistrot` : dessin **entièrement par le
+tarot : table ronde en perspective dans une taverne aux chandelles, cartes enluminées et **atouts illustrés** comme un
+vrai Tarot Nouveau (deux scènes par atout, en haut la ville et en bas la campagne : les âges, les heures du jour, les
+éléments, les loisirs, les saisons, le jeu, le carnaval ; l'Excuse est le fou à la mandoline ; numéro en cartouche,
+doré pour les bouts), animations. Construit sur le moteur commun `bistrot` : dessin **entièrement par le
 processeur**, sans carte graphique, **jamais plus de 50 Mo de RAM** (environ 26-30 Mo en fenêtre, 42 Mo au plus en
 plein écran 1080p).
 

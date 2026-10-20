@@ -33,7 +33,11 @@ avec leurs releases v1.x et v2.0.
   celui du bas est retourné comme sur un vrai jeu, couleurs en formes vectorielles aux encres profondes en dégradé,
   points du bas retournés, figures à double tête (roi couronné et barbu au sceptre, dame à la fleur, valet au
   béret et à la hallebarde, cavalier casqué) sur fond losangé d'or outremer ou pourpre, as dans un anneau d'or
-  perlé, dos pourpre à losanges dorés et médaillon à la fleur de lys. Jeux de 32 et 52 cartes, jokers, tarot
+  perlé, dos pourpre à losanges dorés et médaillon à la fleur de lys. **Atouts du tarot illustrés** (`atouts`) :
+  deux scènes par atout d'après les sujets du Tarot Nouveau (en haut la ville, en bas la campagne : âges, heures du
+  jour, éléments, loisirs, saisons, jeu, carnaval et parade), dessinées en vectoriel avec des personnages en tenue
+  du XIXe siècle ; l'Excuse est le fou à la mandoline (planches de contrôle :
+  `cargo run --release --example planche_atouts -- <dossier>`). Jeux de 32 et 52 cartes, jokers, tarot
   (cavaliers, atouts 1 à 21, excuse) : `Carte::jeu32(i)`, `Carte::jeu52(i)`, `Carte::tarot(i)`. Chaque carte est
   dessinée à la première utilisation, en taille normale et en petite taille (cartes vues de loin).
 - **Taverne** (`table`) : plancher de grosses planches dans la pénombre, table ronde en chêne cerclée de fer et
