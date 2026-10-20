@@ -1,0 +1,8 @@
+/target/
+*.exe
+*.png
+*.zip
+*.cfg
+sim.log
+421_bot.bin
+__pycache__/

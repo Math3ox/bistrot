@@ -1,0 +1,12 @@
+[package]
+name = "jeu421"
+version = "2.1.0"
+edition = "2021"
+description = "Jeu du 421 en 3D isometrique (bot, 2 joueurs, duel en ligne)"
+
+[[bin]]
+name = "421"
+path = "src/main.rs"
+
+[dependencies]
+bistrot.workspace = true

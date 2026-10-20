@@ -1,0 +1,13 @@
+[package]
+name = "belote"
+version = "2.1.0"
+edition = "2021"
+description = "Belote en 3D isometrique (bots, belote a deux, en ligne 2-4 joueurs)"
+
+[[bin]]
+name = "belote"
+path = "src/main.rs"
+
+[dependencies]
+bistrot.workspace = true
+tiny-skia = "0.11"
