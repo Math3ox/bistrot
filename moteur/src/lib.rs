@@ -5,7 +5,6 @@
 //! - [`polices`] : polices du système (gothique et Palatino sous Windows, équivalents sous Linux), lues à la demande.
 //! - [`cartes`] : cartes enluminées (jeux de 32, 52, jokers, tarot), dessinées une fois puis posées.
 //! - [`table`] : décor de taverne (plancher, table de chêne, chandelles) en cache, places de 2 à 5 joueurs autour.
-//! - [`ambiance`] : chope de bière sur la table, chouette en images précalculées (comme un GIF).
 //! - [`anim`] : interrupteur des animations (auto, oui, non) ; carte envoyée en arc avec son ombre, ramassage du pli.
 //! - [`iso`] : projection isométrique 3D (jeux de dés : cylindres, ombres, texte couché).
 //! - [`ui`] : parchemins (panneaux, étiquettes de joueurs, bulles), boutons, pièce du donneur.
@@ -15,7 +14,6 @@
 //! Un jeu fournit ses règles (sans graphisme, déterministes à partir d'une graine) et implémente
 //! [`shell::Game`] pour la fenêtre et [`reseau::Partie`] pour le jeu en ligne.
 
-pub mod ambiance;
 pub mod anim;
 pub mod cartes;
 pub mod gfx;

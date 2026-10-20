@@ -4,7 +4,6 @@
 use crate::engine::*;
 use crate::table::{Table, LEVEL_NAMES, SUIT_NAMES};
 use crate::vue::{Vue, BULLE_FONDU, BULLE_POP, DUREE_RETOURNE};
-use bistrot::ambiance::PLACE_CHOUETTE;
 use bistrot::anim::{self, rebond, Distribution, Vol};
 use bistrot::cartes::{Carte, Couleur, Paquet};
 use bistrot::gfx::{alpha, Align, Color, Face, Gfx, Xf};
@@ -420,8 +419,6 @@ pub fn under_signature(t: &Table, vue: &Vue) -> u64 {
 /// Tout ce qui bouge ou change souvent, par-dessus la couche fixe.
 pub fn draw_over(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, ov: &Overlay, vue: &Vue) {
     let s = Scene { g, f, deck, vue };
-    // la chouette est posée sur la table : les cartes passent au-dessus
-    vue.chouette.dessiner(g, PLACE_CHOUETTE.0, PLACE_CHOUETTE.1);
     s.retourne(t);
     s.tricks(t);
     s.my_hand(t, ov.hover);

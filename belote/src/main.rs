@@ -104,8 +104,6 @@ impl Belote {
         }
         (t.message(), self.net.panel().map(|(a, l, m)| (a.to_string(), l.map(|x| x.to_string()), m))).hash(&mut h);
         (self.gallery, self.strength, self.hover, draw::buttons(t).iter().position(|b| b.touche(self.mouse.0, self.mouse.1))).hash(&mut h);
-        // la chouette change d'image (seulement quand elle est visible)
-        (!self.gallery && !self.strength).then(|| self.vue.chouette.image()).hash(&mut h);
         anim::libelle().hash(&mut h);
         h.finish()
     }
@@ -136,7 +134,6 @@ impl shell::Game for Belote {
     fn alleger(&mut self) {
         self.paquet.alleger();
         self.decor.alleger();
-        self.vue.chouette.alleger();
     }
 
     fn draw(&mut self, g: &Gfx) {

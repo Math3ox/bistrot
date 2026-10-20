@@ -35,11 +35,8 @@ avec leurs releases v1.x et v2.0.
   perlé, dos pourpre à losanges dorés et médaillon à la fleur de lys. Jeux de 32 et 52 cartes, jokers, tarot
   (cavaliers, atouts 1 à 21, excuse) : `Carte::jeu32(i)`, `Carte::jeu52(i)`, `Carte::tarot(i)`. Chaque carte est
   dessinée à la première utilisation, en taille normale et en petite taille (cartes vues de loin).
-- **Taverne** (`table`, `ambiance`) : plancher de grosses planches dans la pénombre, table ronde en chêne cerclée de
-  fer et rivetée, deux chandelles qui éclairent la table, chope de bière à moitié vide et sa mousse (décor en cache :
-  `table::Decor`) ; chouette chevêche posée sur la table qui regarde à gauche, à droite, cligne des yeux et penche
-  la tête : 8 images calculées une fois (comme un GIF, ~0,7 Mo en plein écran) rejouées en boucle, l'image
-  n'est refaite qu'à chaque changement de pose (~1,4 fois par seconde, ~1,5 % d'un cœur) ; places de **2 à 5 joueurs**
+- **Taverne** (`table`) : plancher de grosses planches dans la pénombre, table ronde en chêne cerclée de fer et
+  rivetée, deux chandelles qui éclairent la table (décor en cache : `table::Decor`) ; places de **2 à 5 joueurs**
   (main, pli, bulle, étiquette), main du bas en éventail qui se resserre pour les longues mains, dos des cartes
   adverses.
 - **Animations** (`anim`) : carte jouée envoyée en arc avec son ombre et ramassée vers le gagnant ; carte distribuée
@@ -48,7 +45,7 @@ avec leurs releases v1.x et v2.0.
   rebondit (`rebond` : bulles).
 - **Interrupteur des animations** (`anim::reglage`, touche `M` des jeux, mémorisé dans leurs réglages) : `auto`,
   `oui` ou `non`. Coupées, toutes les aides d'animation rendent directement l'état final (carte posée, valeur
-  atteinte, chouette immobile) : seules les images où la partie change sont calculées (une partie de belote en
+  atteinte) : seules les images où la partie change sont calculées (une partie de belote en
   automatique passe de ~17 % à ~3 % d'un cœur, 0 % au repos). En `auto`, la fenêtre chronomètre les images animées
   et coupe tout si elles prennent plus de 25 ms en moyenne (processeur léger) ; la ligne des réglages affiche alors
   « animations coupées ».
@@ -87,6 +84,4 @@ avec leurs releases v1.x et v2.0.
   (réimplémentation indépendante des règles). 421 : `python 421/bottest.py` (bot difficile = référence Python).
 - Captures : `python outils/shot.py <belote|421> sortie.png [actions...]` (ne pilote que la fenêtre qu'il lance).
   Sans fenêtre : `cargo test --release -p belote -- --ignored apercus` dessine les enchères et le bilan de manche
-  dans `target/apercu_*.png` ; `-- --ignored mesure_dessin --nocapture` donne les temps de dessin ;
-  `cargo test --release -p bistrot -- --ignored planche` agrandit les poses de la chouette et la chope
-  (`target/planche_ambiance.png`).
+  dans `target/apercu_*.png` ; `-- --ignored mesure_dessin --nocapture` donne les temps de dessin.

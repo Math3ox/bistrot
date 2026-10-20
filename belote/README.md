@@ -48,7 +48,7 @@ vide, les obligations de la belote classique s'appliquent. Même décompte (162 
 - **Jeu** : clique sur une carte (les cartes grisées sont injouables). Espace ou Entrée : SUITE à la fin d'une manche.
 - Raccourcis : `J` 4 joueurs / à deux · `L` niveau des bots · `A` annonces · `H` aide · `P` objectif · `F` force des cartes ·
   `M` animations · `F11` plein écran · `F12` capture `belote_shot.png` · `N` en ligne · `Échap` quitter.
-- `M` : **animations** auto → oui → non. `non` pour un processeur léger : cartes posées d'un coup, chouette immobile,
+- `M` : **animations** auto → oui → non. `non` pour un processeur léger : cartes posées d'un coup,
   plus aucune image calculée pour l'animation. En `auto` (par défaut), le jeu coupe lui-même les animations s'il
   trouve le processeur trop lent (« animations coupées » dans la ligne du bas).
 - `H` (aide) : conseil pour prendre ou passer, et la carte conseillée est surlignée en or pendant le jeu.

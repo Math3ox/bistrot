@@ -58,13 +58,12 @@ fn bois(g: &Gfx) {
     table(g);
 }
 
-/// Ce qui n'est pas de la teinte du bois : cercle de fer, arête éclairée du plateau, chandelles, chope.
+/// Ce qui n'est pas de la teinte du bois : cercle de fer, arête éclairée du plateau, chandelles.
 fn details(g: &Gfx) {
     fer(g);
     for &(x, y) in &CHANDELLES {
         chandelle(g, x, y);
     }
-    crate::ambiance::chope(g, crate::ambiance::PLACE_CHOPE.0, crate::ambiance::PLACE_CHOPE.1);
 }
 
 /// Décor en cache : niveau de lumière de chaque pixel et couleur moyenne de chaque niveau.
