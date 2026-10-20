@@ -1,6 +1,7 @@
 //! Réglages du 421, mémorisés dans `421.cfg` (voir `bistrot::reglages`).
 
 use crate::game::{Game, Mode};
+use bistrot::anim::{self, Animations};
 use bistrot::reglages::Reglages;
 
 pub struct Cfg {
@@ -26,6 +27,9 @@ pub fn load(g: &mut Game) -> Cfg {
     if let Some(l) = r.entier("defaites", 0, 99_999) {
         g.losses = l as u32;
     }
+    if let Some(a) = r.mot("animations").and_then(Animations::depuis) {
+        anim::regler(a);
+    }
     g.pot = g.pot_init;
     Cfg { fullscreen: r.oui("plein_ecran").unwrap_or(false), ip: r.adresse("ip").unwrap_or_default(), r }
 }
@@ -41,5 +45,6 @@ pub fn save(g: &Game, c: &mut Cfg) {
     r.mettre("victoires", g.wins);
     r.mettre("defaites", g.losses);
     r.mettre("ip", &c.ip);
+    r.mettre("animations", anim::reglage().nom());
     r.enregistrer("réglages du 421");
 }

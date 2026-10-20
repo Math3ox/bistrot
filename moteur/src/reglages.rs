@@ -32,6 +32,11 @@ impl Reglages {
         self.valeurs.get(cle)?.parse::<i64>().ok().filter(|v| (min..=max).contains(v))
     }
 
+    /// Valeur brute (texte).
+    pub fn mot(&self, cle: &str) -> Option<&str> {
+        self.valeurs.get(cle).map(|v| v.as_str())
+    }
+
     pub fn oui(&self, cle: &str) -> Option<bool> {
         self.entier(cle, 0, 1).map(|v| v == 1)
     }

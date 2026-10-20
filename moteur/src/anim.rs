@@ -2,9 +2,80 @@
 //! pose, perspective qui s'écrase) puis ramassée vers le gagnant ; carte distribuée (du paquet du donneur
 //! vers sa place, retournée en arrivant dans la main du joueur) ; valeurs qui rejoignent leur cible en
 //! douceur (cartes de la main qui se réarrangent, carte qui se soulève, score qui défile).
+//!
+//! **Interrupteur des animations** (processeurs légers) : réglage `auto`, `oui` ou `non`. Coupées, toutes
+//! les aides ci-dessous rendent directement l'état final (carte posée, valeur atteinte, pas de rebond) : plus
+//! aucune image n'est calculée pour faire bouger quoi que ce soit, seulement quand la partie change. En `auto`,
+//! la fenêtre mesure le temps de ses images animées et coupe les animations si le processeur ne suit pas.
 
 use crate::gfx::Xf;
 use crate::table::SOL;
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+
+/// Réglage des animations.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Animations {
+    /// jouées, sauf si la fenêtre trouve le processeur trop lent
+    Auto,
+    Oui,
+    Non,
+}
+
+static REGLAGE: AtomicU8 = AtomicU8::new(0);
+static LENT: AtomicBool = AtomicBool::new(false);
+
+impl Animations {
+    const TOUS: [Animations; 3] = [Animations::Auto, Animations::Oui, Animations::Non];
+
+    /// Nom dans les fichiers de réglages.
+    pub fn nom(self) -> &'static str {
+        ["auto", "oui", "non"][self as usize]
+    }
+
+    pub fn depuis(s: &str) -> Option<Animations> {
+        Self::TOUS.into_iter().find(|a| a.nom() == s)
+    }
+
+    /// Réglage suivant (touche du jeu) : auto, oui, non, auto...
+    pub fn suivant(self) -> Animations {
+        Self::TOUS[(self as usize + 1) % 3]
+    }
+}
+
+/// Réglage en cours.
+pub fn reglage() -> Animations {
+    Animations::TOUS[REGLAGE.load(Ordering::Relaxed) as usize % 3]
+}
+
+pub fn regler(a: Animations) {
+    REGLAGE.store(a as u8, Ordering::Relaxed);
+}
+
+/// Les animations sont jouées.
+pub fn actives() -> bool {
+    match reglage() {
+        Animations::Oui => true,
+        Animations::Non => false,
+        Animations::Auto => !LENT.load(Ordering::Relaxed),
+    }
+}
+
+/// La fenêtre a trouvé le processeur trop lent (les animations sont coupées en mode auto).
+pub fn processeur_lent() -> bool {
+    LENT.load(Ordering::Relaxed)
+}
+
+pub(crate) fn signaler_lent() {
+    LENT.store(true, Ordering::Relaxed);
+}
+
+/// Texte pour la ligne des réglages : « auto », « coupées » (auto, processeur trop lent), « oui », « non ».
+pub fn libelle() -> String {
+    match reglage() {
+        Animations::Auto if processeur_lent() => "coupées".into(),
+        a => a.nom().into(),
+    }
+}
 
 /// Durée du vol d'une carte (ms) et du ramassage du pli (ms).
 pub const DUREE_VOL: f64 = 420.0;
@@ -23,7 +94,9 @@ pub struct Vol {
 impl Vol {
     /// Position au temps `ms` après le départ ; `ramassage` = (main du gagnant, ms depuis le début du ramassage).
     /// Renvoie la transformation de la carte et, pendant le vol, l'ombre au sol (centre, rayons).
+    /// Animations coupées : la carte est tout de suite posée dans le pli, et y reste jusqu'au ramassage.
     pub fn a(&self, ms: f64, ramassage: Option<((f64, f64), f64)>) -> (Xf, Option<(f32, f32, f32, f32)>) {
+        let (ms, ramassage) = if actives() { (ms, ramassage) } else { (DUREE_VOL, None) };
         let t = (ms / DUREE_VOL).clamp(0.0, 1.0);
         let e = 1.0 - (1.0 - t).powi(3); // arrivée en décélérant
         let h = (std::f64::consts::PI * t).sin(); // hauteur du vol
@@ -52,18 +125,28 @@ impl Vol {
 
 /// Départ rapide, arrivée en douceur (t de 0 à 1).
 pub fn sortie(t: f64) -> f64 {
+    if !actives() {
+        return 1.0;
+    }
     1.0 - (1.0 - t.clamp(0.0, 1.0)).powi(3)
 }
 
 /// Léger dépassement puis retour (apparition « qui rebondit »), t de 0 à 1.
 pub fn rebond(t: f64) -> f64 {
+    if !actives() {
+        return 1.0;
+    }
     let t = t.clamp(0.0, 1.0) - 1.0;
     1.0 + t * t * (2.7 * t + 1.7)
 }
 
 /// Fait rejoindre sa cible à une valeur en douceur (constante de temps `tau` ms) ; renvoie vrai tant
-/// qu'elle bouge encore visiblement.
+/// qu'elle bouge encore visiblement. Animations coupées : la valeur saute à sa cible.
 pub fn approcher(v: &mut f64, cible: f64, dt: f64, tau: f64) -> bool {
+    if !actives() {
+        *v = cible;
+        return false;
+    }
     let k = 1.0 - (-dt / tau).exp();
     *v += (cible - *v) * k;
     if (cible - *v).abs() < 0.25 {
@@ -89,7 +172,9 @@ pub struct Distribution {
 
 impl Distribution {
     /// Au temps `ms` après le départ : transformation, ombre au sol (centre, rayons), face visible.
+    /// Animations coupées : la carte est tout de suite à sa place.
     pub fn a(&self, ms: f64) -> (Xf, Option<(f32, f32, f32, f32)>, bool) {
+        let ms = if actives() { ms } else { DUREE_DISTRIB };
         let t = (ms / DUREE_DISTRIB).clamp(0.0, 1.0);
         let e = sortie(t);
         let h = (std::f64::consts::PI * t).sin();

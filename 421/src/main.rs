@@ -113,7 +113,7 @@ impl shell::Game for App {
     }
 
     fn animating(&self) -> bool {
-        self.g.rolling
+        self.g.rolling && bistrot::anim::actives()
     }
 
     fn key(&mut self, k: Key) {
@@ -170,6 +170,10 @@ impl shell::Game for App {
                     'L' => g.cycle_level(),
                     'H' => g.help(),
                     'P' => g.cycle_pot(),
+                    'M' => {
+                        bistrot::anim::regler(bistrot::anim::reglage().suivant());
+                        g.save_needed = true;
+                    }
                     _ => {}
                 },
                 _ => {}

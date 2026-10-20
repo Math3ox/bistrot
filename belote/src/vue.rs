@@ -1,9 +1,11 @@
 //! Ce que l'écran montre en mouvement, à côté de la partie (qui, elle, ne dépend jamais de l'affichage) :
 //! cartes en cours de distribution, cartes de la main qui glissent à leur place et se soulèvent au survol,
-//! retourne qui se retourne, bulles qui apparaissent et s'effacent, score qui défile.
+//! retourne qui se retourne, bulles qui apparaissent et s'effacent, score qui défile, chouette qui regarde
+//! autour d'elle. Animations coupées (`bistrot::anim`) : tout est directement à sa place.
 
 use crate::table::Table;
-use bistrot::anim::{approcher, DUREE_DISTRIB};
+use bistrot::ambiance::Chouette;
+use bistrot::anim::{self, approcher, DUREE_DISTRIB};
 use bistrot::table::{main_x, paquet_donneur};
 use std::collections::HashMap;
 
@@ -38,6 +40,8 @@ pub struct Vue {
     /// début d'affichage de chaque bulle (texte, fin) -> début
     pub bulles: [Option<(String, f64, f64)>; 4],
     pub score: [f64; 2],
+    /// chouette posée sur la table (images précalculées)
+    pub chouette: Chouette,
     connues: [usize; 4],
     ma_main: Vec<u8>,
     bouge: bool,
@@ -137,6 +141,18 @@ impl Vue {
         // score qui défile
         for k in 0..2 {
             bouge |= approcher(&mut self.score[k], t.e.score[k] as f64, dt, 160.0);
+        }
+        self.chouette.avancer(dt);
+        if !anim::actives() {
+            // animations coupées : cartes distribuées déjà en main, retourne déjà retournée, bulles sans effet
+            self.vols.clear();
+            for p in 0..np {
+                if p != t.me {
+                    self.stable[p] = self.connues[p];
+                }
+            }
+            self.retourne.1 = f64::NEG_INFINITY;
+            bouge = false;
         }
         self.bouge = bouge;
     }

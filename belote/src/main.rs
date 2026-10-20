@@ -10,6 +10,7 @@ mod engine;
 mod table;
 mod vue;
 
+use bistrot::anim;
 use bistrot::cartes::Paquet;
 use bistrot::gfx::Gfx;
 use bistrot::polices::{Fichiers, Polices};
@@ -103,6 +104,9 @@ impl Belote {
         }
         (t.message(), self.net.panel().map(|(a, l, m)| (a.to_string(), l.map(|x| x.to_string()), m))).hash(&mut h);
         (self.gallery, self.strength, self.hover, draw::buttons(t).iter().position(|b| b.touche(self.mouse.0, self.mouse.1))).hash(&mut h);
+        // la chouette change d'image (seulement quand elle est visible)
+        (!self.gallery && !self.strength).then(|| self.vue.chouette.image()).hash(&mut h);
+        anim::libelle().hash(&mut h);
         h.finish()
     }
 }
@@ -132,6 +136,7 @@ impl shell::Game for Belote {
     fn alleger(&mut self) {
         self.paquet.alleger();
         self.decor.alleger();
+        self.vue.chouette.alleger();
     }
 
     fn draw(&mut self, g: &Gfx) {
@@ -163,6 +168,9 @@ impl shell::Game for Belote {
     }
 
     fn animating(&self) -> bool {
+        if !anim::actives() {
+            return false;
+        }
         let t = &self.t;
         let last = t.ast0.iter().cloned().fold(f64::MIN, f64::max);
         t.collect > 0.0 || t.now - last < 450.0 || self.vue.anime()
@@ -228,6 +236,10 @@ impl shell::Game for Belote {
                     'U' => t.auto = !t.auto,
                     'G' => self.gallery = !self.gallery,
                     'F' => self.strength = !self.strength,
+                    'M' => {
+                        anim::regler(anim::reglage().suivant());
+                        t.save_needed = true;
+                    }
                     'N' => net.open(t),
                     _ => {}
                 },

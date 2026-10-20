@@ -30,13 +30,14 @@ bandes noires si besoin) et les clics restent justes.
 | `L` | niveau du bot : facile → normal → difficile |
 | `H` | **aide** pendant le choix des dés : probabilité de 421 et de « mieux » pour les dés sélectionnés + conseil optimal |
 | `P` | pot de départ 7 / 11 / 15 / 21 jetons (à la prochaine partie) |
+| `M` | **animations** auto → oui → non : `non` (processeur léger) pose les dés d'un coup ; `auto` les coupe tout seul si le processeur est trop lent |
 | `F11` | **plein écran** (proportions gardées). Échap en sort |
 
 Niveaux du bot : *facile* = stratégie normale avec 35 % de décisions au hasard ; *normal* = garde les as, un 2 et un 4 ;
 *difficile* = stratégie **optimale** (programmation dynamique sur les 56 mains possibles, utilité en jetons). En simulation :
 difficile bat normal dans ~58 % des parties, normal bat facile dans ~63 %.
 
-Les réglages (pot, niveau, 1/2 joueurs, plein écran, victoires/défaites contre le bot, dernière IP) sont mémorisés dans
+Les réglages (pot, niveau, 1/2 joueurs, animations, plein écran, victoires/défaites contre le bot, dernière IP) sont mémorisés dans
 `421.cfg` (texte) à côté de l'exécutable ; supprimer ce fichier remet les valeurs par défaut.
 
 ## Multijoueur en ligne (duel à 2, IP directe)

@@ -9,7 +9,11 @@
 //!
 //! Le fond (décor + tout ce qui ne bouge pas) est refait seulement quand son empreinte ou la taille change ;
 //! chaque image recopie ce fond puis dessine ce qui bouge. Rien n'est redessiné quand rien ne change.
+//!
+//! Processeurs légers : avec le réglage d'animations `auto` (voir `anim`), la fenêtre chronomètre ses images
+//! animées et coupe toutes les animations si elles prennent plus de 25 ms en moyenne (moins de 40 images/s).
 
+use crate::anim::{self, Animations};
 use crate::gfx::{Gfx, Glyphs, WH, WW};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -27,6 +31,8 @@ pub const LIMITE_RAM: usize = 50 << 20;
 const ALERTE_RAM: usize = 44 << 20;
 /// Pixels de l'image interne au plus (1920 x 1080 = 2,07 millions).
 const PIXELS_MAX: f64 = 2.2e6;
+/// Temps moyen d'une image animée au-delà duquel le processeur est jugé trop lent (ms), sur 60 images.
+const IMAGE_LENTE_MS: f64 = 25.0;
 
 /// Touches utiles au jeu.
 #[derive(Clone, Copy, PartialEq, Debug)]
@@ -205,6 +211,8 @@ struct App<G: Game> {
     last_frame: Instant,
     /// dernier contrôle de la mémoire
     controle: Instant,
+    /// temps cumulé et nombre des dernières images animées (détection d'un processeur trop lent)
+    mesure: (f64, u32),
     dirty: bool,
     fs: bool,
     mouse: (f64, f64),
@@ -253,6 +261,7 @@ impl<G: Game> App<G> {
             }
             self.fond_sig = Some(sig);
         }
+        let debut = Instant::now();
         let (Some(fond), Some(frame)) = (&self.fond, &mut self.frame) else { return };
         frame.data_mut().copy_from_slice(fond.data());
         {
@@ -266,6 +275,23 @@ impl<G: Game> App<G> {
         self.afficher(&win, size.width, size.height);
         self.dirty = false;
         self.last_frame = Instant::now();
+        self.chronometrer(debut);
+    }
+
+    /// Mode auto : si les images animées sont trop lentes (processeur léger), on coupe les animations.
+    fn chronometrer(&mut self, debut: Instant) {
+        if anim::reglage() != Animations::Auto || anim::processeur_lent() || !self.g.animating() {
+            return;
+        }
+        self.mesure.0 += debut.elapsed().as_secs_f64() * 1000.0;
+        self.mesure.1 += 1;
+        if self.mesure.1 >= 60 {
+            if self.mesure.0 / self.mesure.1 as f64 > IMAGE_LENTE_MS {
+                anim::signaler_lent();
+                self.dirty = true;
+            }
+            self.mesure = (0.0, 0);
+        }
     }
 
     #[cfg(windows)]
@@ -453,6 +479,7 @@ pub fn run<G: Game>(g: G) {
         last: Instant::now(),
         last_frame: Instant::now(),
         controle: Instant::now(),
+        mesure: (0.0, 0),
         dirty: true,
         fs: false,
         mouse: (0.0, 0.0),

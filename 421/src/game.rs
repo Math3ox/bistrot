@@ -614,8 +614,10 @@ impl Game {
         self.now += dt;
         if self.rolling {
             let t = ((self.now - self.roll_start) / ROLL_MS).min(1.0);
+            // animations coupées (processeur léger) : les dés sont tout de suite à leur place
+            let vu = if bistrot::anim::actives() { t } else { 1.0 };
             for d in self.dice.iter_mut() {
-                d.update(if d.roll { t } else { 1.0 });
+                d.update(if d.roll { vu } else { 1.0 });
             }
             if t >= 1.0 {
                 self.rolling = false;

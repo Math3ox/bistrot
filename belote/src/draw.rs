@@ -4,7 +4,8 @@
 use crate::engine::*;
 use crate::table::{Table, LEVEL_NAMES, SUIT_NAMES};
 use crate::vue::{Vue, BULLE_FONDU, BULLE_POP, DUREE_RETOURNE};
-use bistrot::anim::{rebond, Distribution, Vol};
+use bistrot::ambiance::PLACE_CHOUETTE;
+use bistrot::anim::{self, rebond, Distribution, Vol};
 use bistrot::cartes::{Carte, Couleur, Paquet};
 use bistrot::gfx::{alpha, Align, Color, Face, Gfx, Xf};
 use bistrot::polices::Polices;
@@ -252,7 +253,7 @@ impl Scene<'_, '_> {
                 continue;
             }
             let taille = 0.6 + 0.4 * rebond((t.now - debut) / BULLE_POP);
-            let opacite = ((fin - t.now) / BULLE_FONDU).min(1.0);
+            let opacite = if anim::actives() { ((fin - t.now) / BULLE_FONDU).min(1.0) } else { 1.0 };
             ui::bulle_animee(self.g, self.f, self.place(t, p).bulle, txt, taille as f32, opacite as f32);
         }
     }
@@ -384,11 +385,12 @@ impl Scene<'_, '_> {
 pub fn optline(t: &Table) -> String {
     let yn = |b: bool| if b { "oui" } else { "non" };
     format!(
-        "J: {} joueurs   L: niveau {}   A: annonces {}   H: aide {}   F: force des cartes   F11: plein écran   N: en ligne   Echap: quitter",
+        "J: {} joueurs  L: niveau {}  A: annonces {}  H: aide {}  M: animations {}  F: force des cartes  F11: plein écran  N: en ligne  Echap: quitter",
         t.np(),
         LEVEL_NAMES[t.botlvl as usize],
         yn(t.e.optann != 0),
-        yn(t.help)
+        yn(t.help),
+        anim::libelle()
     )
 }
 
@@ -418,6 +420,8 @@ pub fn under_signature(t: &Table, vue: &Vue) -> u64 {
 /// Tout ce qui bouge ou change souvent, par-dessus la couche fixe.
 pub fn draw_over(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, ov: &Overlay, vue: &Vue) {
     let s = Scene { g, f, deck, vue };
+    // la chouette est posée sur la table : les cartes passent au-dessus
+    vue.chouette.dessiner(g, PLACE_CHOUETTE.0, PLACE_CHOUETTE.1);
     s.retourne(t);
     s.tricks(t);
     s.my_hand(t, ov.hover);

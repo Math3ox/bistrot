@@ -49,7 +49,10 @@ const PIPMASK: [u16; 6] = [0x010, 0x101, 0x111, 0x145, 0x155, 0x16D];
 const PIPX: [f64; 9] = [-0.5, 0.0, 0.5, -0.5, 0.0, 0.5, -0.5, 0.0, 0.5];
 const PIPY: [f64; 9] = [-0.5, -0.5, -0.5, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5];
 
-pub const HINT: &str = "J : 1/2 joueurs  -  L : bot  -  H : aide  -  P : pot  -  N : en ligne  -  F11 : plein écran";
+/// Ligne d'aide des touches (avec le réglage des animations).
+pub fn hint() -> String {
+    format!("J : 1/2 joueurs    L : bot    H : aide    P : pot    M : animations {}    N : en ligne    F11 : plein écran", bistrot::anim::libelle())
+}
 
 pub struct Fonts {
     fichiers: Fichiers,
@@ -275,7 +278,7 @@ fn draw_hud(pen: &Pen<'_, '_>, g: &Game) {
     pen.text(&right, WW as f64 - 20.0, 17.0, 30.0, false, C_WHITE, 1.0, 1.0);
     pen.text(&g.line1, 20.0, 62.0, 30.0, false, C_WHITE, 0.0, 1.0);
     pen.text(&g.line2, 20.0, 98.0, 30.0, false, C_GOLD, 0.0, 1.0);
-    pen.text(HINT, 20.0, WH as f64 - 38.0, 23.0, true, C_HINT, 0.0, 1.0);
+    pen.text(&hint(), 20.0, WH as f64 - 36.0, 21.0, true, C_HINT, 0.0, 1.0);
 }
 
 /// Décor fixe (mis en cache) : fond et table.

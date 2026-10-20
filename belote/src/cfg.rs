@@ -1,6 +1,7 @@
 //! Réglages de la belote, mémorisés dans `belote.cfg` (voir `bistrot::reglages`).
 
 use crate::table::Table;
+use bistrot::anim::{self, Animations};
 use bistrot::reglages::Reglages;
 
 pub struct Cfg {
@@ -27,6 +28,9 @@ pub fn load(t: &mut Table) -> Cfg {
     if let Some(h) = r.oui("aide") {
         t.help = h;
     }
+    if let Some(a) = r.mot("animations").and_then(Animations::depuis) {
+        anim::regler(a);
+    }
     if let Some(w) = r.entier("victoires", 0, 999_999) {
         t.wins[0] = w as u32;
     }
@@ -48,6 +52,7 @@ pub fn save(t: &Table, c: &mut Cfg) {
     r.mettre("niveau", t.botlvl);
     r.mettre("plein_ecran", c.fullscreen as u8);
     r.mettre("aide", t.help as u8);
+    r.mettre("animations", anim::reglage().nom());
     r.mettre("victoires", t.wins[0]);
     r.mettre("defaites", t.wins[1]);
     r.mettre("ip", &c.ip);
