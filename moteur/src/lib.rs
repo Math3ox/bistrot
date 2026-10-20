@@ -1,4 +1,4 @@
-//! Moteur commun des jeux de bistrot (belote, 421, et les suivants : tarot, rami...).
+//! Moteur commun des jeux de bistrot (belote, 421, tarot, et les suivants : rami...).
 //!
 //! - [`shell`] : fenêtre et boucle (winit + softbuffer), décor en cache, images seulement si quelque chose change.
 //! - [`gfx`] : dessin 100 % processeur (tiny-skia + ab_glyph) en coordonnées logiques 1100 x 800.

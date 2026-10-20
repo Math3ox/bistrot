@@ -498,6 +498,13 @@ impl<'a> Gfx<'a> {
             self.pm.borrow_mut().draw_pixmap(0, 0, img.as_ref(), &paint, t, None);
             return;
         }
+        if ts.sx.abs() < 1e-3 && ts.sy.abs() < 1e-3 && (ts.kx.abs() - 1.0).abs() < 1e-3 && (ts.ky.abs() - 1.0).abs() < 1e-3 {
+            // quart de tour sans changement d'échelle (mains des joueurs de côté) : pixels recopiés
+            let paint = PixmapPaint { quality: tiny_skia::FilterQuality::Nearest, ..Default::default() };
+            let t = Transform::from_row(0.0, ts.ky.signum(), ts.kx.signum(), 0.0, ts.tx.round(), ts.ty.round());
+            self.pm.borrow_mut().draw_pixmap(0, 0, img.as_ref(), &paint, t, None);
+            return;
+        }
         // agrandie, réduite ou tournée : filtre bicubique (plus net que le bilinéaire)
         let paint = PixmapPaint { quality: tiny_skia::FilterQuality::Bicubic, ..Default::default() };
         self.pm.borrow_mut().draw_pixmap(0, 0, img.as_ref(), &paint, ts, None);

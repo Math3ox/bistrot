@@ -1,5 +1,5 @@
 [workspace]
-members = ["moteur", "belote", "421"]
+members = ["moteur", "belote", "421", "tarot"]
 resolver = "2"
 
 [workspace.dependencies]

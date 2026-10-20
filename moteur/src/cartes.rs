@@ -136,12 +136,13 @@ impl Carte {
     }
 
     /// Jeu de tarot (78 cartes) : 0..55 = 14 rangs (1 à 10, V, C, D, R) par couleur, 56..76 = atouts 1 à 21, 77 = excuse.
+    /// Au tarot, la plus petite carte de chaque couleur est le 1 (la plus faible, pas un as).
     pub fn tarot(i: usize) -> Carte {
         match i {
             0..=55 => {
                 let r = i % 14;
                 let v = match r {
-                    0 => Valeur::As,
+                    0 => Valeur::N(1),
                     1..=9 => Valeur::N(r as u8 + 1),
                     10 => Valeur::Valet,
                     11 => Valeur::Cavalier,
@@ -381,12 +382,13 @@ pub const Y1: f32 = 84.0;
 pub struct PolicesCartes {
     serif: Face,
     serif_grand: Face,
+    serif_moyen: Face,
     serif_petit: Face,
 }
 
 impl PolicesCartes {
     pub fn depuis(f: &Fichiers) -> PolicesCartes {
-        PolicesCartes { serif: f.livre.face(26.0), serif_grand: f.livre.face(46.0), serif_petit: f.livre.face(14.0) }
+        PolicesCartes { serif: f.livre.face(26.0), serif_grand: f.livre.face(40.0), serif_moyen: f.livre.face(31.0), serif_petit: f.livre.face(13.0) }
     }
 }
 
@@ -584,6 +586,7 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
                     }
                     point(g, &id, c, 0., 0., 23., false);
                 }
+                Valeur::N(1) => point(g, &id, c, 0., 0., 15., false),
                 Valeur::N(n) => {
                     for &(x, y) in points(n) {
                         point(g, &id, c, x, y, 8.5, y > 0.0);
@@ -605,21 +608,33 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
             }
         }
         Carte::Atout(n) => {
+            // les bouts (1 et 21) sur fond pourpre, les autres atouts sur fond outremer
+            let bout = n == 1 || n == 21;
             papier(g, C_GOLDF);
-            let n = n.to_string();
-            indices(g, f, &n, Signe::Etoile, C_CBLK);
-            g.rrect_degrade(&id, -30., -50., 60., 100., 8., C_PANEL_HI, C_PANEL_LO, Some(C_GOLDF));
-            g.ellipse(&id, 0., -6., 25., 25., None, Some(C_GOLDLN));
-            g.text(&n, 0., -30., &f.serif_grand, C_CBLK, Align::Center);
-            g.text("ATOUT", 0., 30., &f.serif_petit, C_GOLDLN, Align::Center);
+            let s = n.to_string();
+            indices(g, f, &s, Signe::Etoile, C_CBLK);
+            fond_enlumine(g, bout);
+            medaillon(g);
+            let face = if n >= 10 { &f.serif_moyen } else { &f.serif_grand };
+            g.text(&s, 0., crate::ui::centre_v(face, -8.), face, C_CBLK, Align::Center);
+            g.text("ATOUT", 0., 25., &f.serif_petit, C_GOLDHI, Align::Center);
+            if bout {
+                for (x, y) in [(-21., -42.), (21., -42.), (-21., 42.), (21., 42.)] {
+                    etoile(g, &id, x, y, 4.5, C_GOLDHI);
+                }
+            }
         }
         Carte::Excuse => {
             papier(g, C_GOLDF);
-            g.rrect_degrade(&id, -30., -50., 60., 100., 8., C_PANEL_HI, C_PANEL_LO, Some(C_GOLDF));
             etoile(g, &id, -36., -56., 7., C_CBLK);
             etoile(g, &id, 36., 56., 7., C_CBLK);
-            etoile(g, &id, 0., -8., 24., C_CBLK);
-            g.text("EXCUSE", 0., 30., &f.serif_petit, C_GOLDLN, Align::Center);
+            fond_enlumine(g, true);
+            medaillon(g);
+            etoile(g, &id, 0., -8., 16., C_CBLK);
+            g.text("EXCUSE", 0., 25., &f.serif_petit, C_GOLDHI, Align::Center);
+            for (x, y) in [(-21., -42.), (21., -42.), (-21., 42.), (21., 42.)] {
+                etoile(g, &id, x, y, 4.5, C_GOLDHI);
+            }
         }
         Carte::Joker(rouge) => {
             let (encre, filet) = if rouge { (C_CRED, C_TRED) } else { (C_CBLK, C_TBLK) };
@@ -631,6 +646,29 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
             g.text("JOKER", 0., 24., &f.serif_petit, encre, Align::Center);
         }
     }
+}
+
+/// Fond des atouts : losanges d'or sur outremer (pourpre pour les bouts), cadre doré.
+fn fond_enlumine(g: &Gfx, bout: bool) {
+    let id = Xf::ID;
+    let (hi, lo) = if bout { (C_POURPRE_HI, C_POURPRE_LO) } else { (C_LAPIS_HI, C_LAPIS_LO) };
+    if let Some(p) = chemin_rrect(-30., -52., 60., 104., 7.) {
+        g.lineaire(&id, &p, (0., -52.), (0., 52.), &[(0.0, lo), (0.5, hi), (1.0, lo)]);
+    }
+    losanges(g, -28.5, -50.5, 28.5, 50.5, 8., alpha(C_GOLDF, 0.42), 0.35, Some(alpha(C_GOLDHI, 0.8)));
+    g.rrect_w(&id, -30., -52., 60., 104., 7., None, Some(C_GOLDF), 1.3);
+    g.rrect(&id, -30., -52., 60., 104., 7., None, Some(C_GOLDLN));
+}
+
+/// Médaillon de vélin cerclé d'or (numéro des atouts, étoile de l'excuse).
+fn medaillon(g: &Gfx) {
+    let id = Xf::ID;
+    if let Some(p) = chemin_ellipse(0., -8., 23., 23.) {
+        g.radial(&id, &p, (-6., -16.), 32., &[(0.0, C_PAPER_HI), (1.0, C_PANEL_LO)]);
+        g.forme(&id, &p, None, Some(C_GOLDF), 2.6);
+    }
+    g.ellipse(&id, 0., -8., 25.4, 25.4, None, Some(C_GOLDLN));
+    g.ellipse(&id, 0., -8., 20.5, 20.5, None, Some(C_GOLDLN));
 }
 
 /// Dos : pourpre à losanges dorés perlés, double cadre doré, médaillon outremer à la fleur de lys.

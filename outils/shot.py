@@ -1,7 +1,7 @@
 """Pilote un jeu (target/release/<jeu>.exe) pour les tests : lance, envoie des touches/clics, capture (F12 -> PNG).
 Seule la fenêtre du processus lancé est pilotée (jamais un jeu déjà ouvert). Les réglages et captures sont dans
 target/release, pas à côté des exe distribués.
-Usage : python outils/shot.py <belote|421> sortie.png [actions...]
+Usage : python outils/shot.py <belote|421|tarot> sortie.png [actions...]
   actions : wait:<s>  key:<code hex>  char:<lettres>  click:<x>,<y> (pixels de la fenêtre)  shot:<fichier.png>
   (ex. char:G wait:1 shot:galerie.png)"""
 import ctypes, os, shutil, subprocess, sys, time
@@ -12,7 +12,8 @@ JEU = sys.argv[1]
 HERE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'target', 'release')
 EXE = os.path.join(HERE, JEU + '.exe')
 SHOT = os.path.join(HERE, JEU + '_shot.png')
-TITLE = {'belote': 'Belote - jeu du bistro en 3D isométrique', '421': '421 - jeu du bistro en 3D isométrique'}[JEU]
+TITLE = {'belote': 'Belote - jeu du bistro en 3D isométrique', '421': '421 - jeu du bistro en 3D isométrique',
+         'tarot': 'Tarot - jeu du bistro en 3D isométrique'}[JEU]
 sys.argv = sys.argv[1:]
 
 

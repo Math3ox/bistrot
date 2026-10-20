@@ -1,0 +1,13 @@
+[package]
+name = "tarot"
+version = "1.0.0"
+edition = "2021"
+description = "Tarot en 3D isometrique (regles FFT, 3 a 5 joueurs, bots, en ligne)"
+
+[[bin]]
+name = "tarot"
+path = "src/main.rs"
+
+[dependencies]
+bistrot.workspace = true
+tiny-skia = "0.11"
