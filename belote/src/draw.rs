@@ -6,7 +6,7 @@ use crate::table::{Table, LEVEL_NAMES, SUIT_NAMES};
 use crate::vue::{Vue, BULLE_FONDU, BULLE_POP, DUREE_RETOURNE};
 use bistrot::anim::{rebond, Distribution, Vol};
 use bistrot::cartes::{Carte, Couleur, Paquet};
-use bistrot::gfx::{Align, Color, Face, Gfx, Xf};
+use bistrot::gfx::{alpha, Align, Color, Face, Gfx, Xf};
 use bistrot::polices::Polices;
 use bistrot::table::{self as tapis, main_x, Place, SOL};
 use bistrot::ui::{self, *};
@@ -35,7 +35,7 @@ pub fn buttons(t: &Table) -> Vec<Btn> {
             v.push(b(676., 560., 130., 48., BtnId::Pass, true));
             v
         }
-        PH_ROUNDEND | PH_MATCHEND => vec![b(425., 548., 250., 52., BtnId::Next, true)],
+        PH_ROUNDEND | PH_MATCHEND => vec![b(425., 566., 250., 52., BtnId::Next, true)],
         _ => vec![],
     }
 }
@@ -72,6 +72,12 @@ impl Scene<'_, '_> {
         self.g.text(s, x, y, f, c, al);
     }
 
+    /// Texte écrit sur le bois, avec une ombre pour rester lisible dans la pénombre.
+    fn text_ombre(&self, s: &str, x: f32, y: f32, f: &Face, c: Color, al: Align) {
+        self.g.text(s, x + 1.5, y + 1.5, f, alpha(Color::new(0.0, 0.0, 0.0, 1.0), 0.75), al);
+        self.g.text(s, x, y, f, c, al);
+    }
+
     fn place(&self, t: &Table, p: usize) -> Place {
         t.places()[t.disp_pos(p)]
     }
@@ -83,7 +89,7 @@ impl Scene<'_, '_> {
                 let xf = Xf::place(300.0 - k as f64, 352.0 - 0.5 * k as f64, 0.95, 0.0, SOL);
                 self.deck.poser(self.g, &xf, None, false);
             }
-            self.text(&format!("TALON : {}", 32 - gs.dpos), 300., 398., &self.f.petit, C_WHITE, Align::Center);
+            self.text_ombre(&format!("Talon : {}", 32 - gs.dpos), 300., 398., &self.f.etiquette, C_WHITE, Align::Center);
         }
     }
 
@@ -205,34 +211,36 @@ impl Scene<'_, '_> {
         }
     }
 
+    /// Parchemins des panneaux de score et d'atout (couche fixe : seuls les textes changent).
+    fn panels_fond(&self) {
+        ui::parchemin(self.g, 14., 12., 310., 96., 8.);
+        ui::parchemin(self.g, 824., 12., 262., 96., 8.);
+    }
+
     fn panels(&self, t: &Table) {
-        let g = self.g;
-        let id = Xf::ID;
         let f = self.f;
-        g.rrect(&id, 14., 12., 310., 96., 14., Some(C_PANEL), Some(C_PANELLN));
         let us = t.me & 1;
         let two = t.np() == 2;
-        self.text(if two { "TOI" } else { "NOUS" }, 30., 20., &f.moyen, C_PLAYER, Align::Left);
-        self.text(if two { "BOT" } else { "EUX" }, 30., 54., &f.moyen, C_ENEMY, Align::Left);
+        self.text(if two { "TOI" } else { "NOUS" }, 30., 20., &f.moyen, C_NOUS, Align::Left);
+        self.text(if two { "BOT" } else { "EUX" }, 30., 54., &f.moyen, C_EUX, Align::Left);
         // le score défile jusqu'à sa nouvelle valeur
         let sc = |k: usize| (self.vue.score[k].round() as i64).to_string();
-        self.text(&sc(us), 308., 20., &f.moyen, C_WHITE, Align::Right);
-        self.text(&sc(us ^ 1), 308., 54., &f.moyen, C_WHITE, Align::Right);
+        self.text(&sc(us), 308., 20., &f.moyen, C_ENCRE, Align::Right);
+        self.text(&sc(us ^ 1), 308., 54., &f.moyen, C_ENCRE, Align::Right);
         let obj = format!("Objectif {}   -   victoires {} / défaites {}", t.e.target, t.wins[0], t.wins[1]);
-        self.text(&obj, 30., 88., &f.petit, C_TXTDIM, Align::Left);
-        g.rrect(&id, 824., 12., 262., 96., 14., Some(C_PANEL), Some(C_PANELLN));
-        self.text("ATOUT", 842., 18., &f.etiquette, C_TXTDIM, Align::Left);
+        self.text(&obj, 30., 86., &f.petit, C_ENCRE_PALE, Align::Left);
+        self.text("Atout", 842., 18., &f.etiquette, C_RUBRIQUE, Align::Left);
         let trump = t.e.gs.trump;
         let (suit, col) = if trump < 0 {
-            (Couleur::depuis((t.e.gs.turned >> 3) as usize), C_TXTDIM)
+            (Couleur::depuis((t.e.gs.turned >> 3) as usize), alpha(C_ENCRE_PALE, 0.6))
         } else {
             let c = Couleur::depuis(trump as usize);
-            (c, if c.rouge() { C_TRUMPRED } else { C_WHITE })
+            (c, if c.rouge() { C_ROUGE } else { C_ENCRE })
         };
         bistrot::cartes::symbole(self.g, &Xf::ID, suit, 1048., 60., 20., col);
         if trump >= 0 {
             let s = format!("pris par {}", t.player_name(t.e.gs.taker as usize));
-            self.text(&s, 842., 54., &f.petit, C_TXT, Align::Left);
+            self.text(&s, 842., 56., &f.petit, C_ENCRE, Align::Left);
         }
     }
 
@@ -258,30 +266,30 @@ impl Scene<'_, '_> {
         let f = self.f;
         let e = &t.e;
         let us = t.me & 1;
-        ui::panneau(self.g, 250., 110., 600., 430., 20.);
+        ui::panneau(self.g, 250., 122., 600., 426., 20.);
         let title = if ph != PH_MATCHEND {
-            "FIN DE MANCHE"
+            "Fin de manche"
         } else if e.rs_winner as usize == us {
-            "VICTOIRE !"
+            "Victoire !"
         } else {
             "Défaite..."
         };
-        self.text(title, 550., 124., &f.titre, C_GOLD, Align::Center);
+        self.text(title, 550., 136., &f.titre, C_RUBRIQUE, Align::Center);
         let contract = match e.rs_made {
             1 => "CONTRAT REMPLI",
             0 => "DEDANS !",
             _ => "LITIGE",
         };
-        self.text(contract, 550., 184., &f.moyen, C_WHITE, Align::Center);
+        self.text(contract, 550., 196., &f.moyen, C_ENCRE, Align::Center);
         let who = format!(
             "Preneur : {}   -   atout : {}",
             t.player_name(e.gs.taker.max(0) as usize),
             SUIT_NAMES[e.gs.trump.clamp(0, 3) as usize]
         );
-        self.text(&who, 550., 208., &f.petit, C_TXTDIM, Align::Center);
+        self.text(&who, 550., 228., &f.petit, C_ENCRE_PALE, Align::Center);
         let two = t.np() == 2;
-        self.text(if two { "TOI" } else { "NOUS" }, 640., 238., &f.etiquette, C_PLAYER, Align::Right);
-        self.text(if two { "BOT" } else { "EUX" }, 810., 238., &f.etiquette, C_ENEMY, Align::Right);
+        self.text(if two { "TOI" } else { "NOUS" }, 640., 254., &f.etiquette, C_NOUS, Align::Right);
+        self.text(if two { "BOT" } else { "EUX" }, 810., 254., &f.etiquette, C_EUX, Align::Right);
         let rows: [(&str, [i32; 2]); 6] = [
             ("Points des plis", e.gs.rpts),
             ("Belote-rebelote", e.gs.bel),
@@ -291,13 +299,13 @@ impl Scene<'_, '_> {
             ("Score", e.score),
         ];
         for (r, (name, v)) in rows.iter().enumerate() {
-            let y = 276.0 + 34.0 * r as f32;
-            self.text(name, 290., y, &f.etiquette, if r < 3 { C_TXT } else { C_GOLD }, Align::Left);
-            self.text(&v[us].to_string(), 640., y, &f.etiquette, C_WHITE, Align::Right);
-            self.text(&v[us ^ 1].to_string(), 810., y, &f.etiquette, C_WHITE, Align::Right);
+            let y = 290.0 + 34.0 * r as f32;
+            self.text(name, 290., y, &f.etiquette, if r < 3 { C_ENCRE } else { C_RUBRIQUE }, Align::Left);
+            self.text(&v[us].to_string(), 640., y, &f.etiquette, C_ENCRE, Align::Right);
+            self.text(&v[us ^ 1].to_string(), 810., y, &f.etiquette, C_ENCRE, Align::Right);
         }
         if e.rs_capot >= 0 {
-            self.text("CAPOT ! (+90)", 550., 495., &f.etiquette, C_GOLD, Align::Center);
+            self.text("CAPOT ! (+90)", 550., 502., &f.etiquette, C_RUBRIQUE, Align::Center);
         }
     }
 
@@ -326,20 +334,20 @@ impl Scene<'_, '_> {
         let trump = if gs.trump >= 0 { gs.trump as usize } else { (gs.turned >> 3) as usize };
         let plain = (trump + 1) % 4;
         ui::panneau(self.g, 130., 96., 840., 600., 20.);
-        self.text("FORCE DES CARTES", 550., 106., &f.titre, C_GOLD, Align::Center);
-        self.text("de la plus forte (à gauche) à la plus faible", 550., 162., &f.petit, C_TXTDIM, Align::Center);
+        self.text("Force des cartes", 550., 110., &f.titre, C_RUBRIQUE, Align::Center);
+        self.text("de la plus forte (à gauche) à la plus faible", 550., 166., &f.petit, C_ENCRE_PALE, Align::Center);
         let rows = [
             (format!("À l'atout ({})", SUIT_NAMES[trump]), trump, ORDER_T, PTS_T, 192.0),
             (format!("Hors atout (ex. {})", SUIT_NAMES[plain]), plain, ORDER_P, PTS_P, 412.0),
         ];
         for (title, suit, order, pts, y) in rows {
-            self.text(&title, 170., y, &f.moyen, C_WHITE, Align::Left);
+            self.text(&title, 170., y, &f.moyen, C_ENCRE, Align::Left);
             for (k, &r) in order.iter().enumerate() {
                 let x = 205.0 + 98.0 * k as f32;
                 let xf = Xf::place(x as f64, (y + 102.0) as f64, 0.6, 0.0, 1.0);
                 self.deck.poser(self.g, &xf, carte((suit * 8 + r) as u8), false);
                 let p = pts[r];
-                let col = if p > 0 { C_GOLD } else { C_TXTDIM };
+                let col = if p > 0 { C_RUBRIQUE } else { C_ENCRE_PALE };
                 let label = if p > 1 { format!("{p} pts") } else { format!("{p} pt") };
                 self.text(&label, x, y + 152.0, &f.etiquette, col, Align::Center);
             }
@@ -347,20 +355,20 @@ impl Scene<'_, '_> {
         self.text(
             "Total : 152 points + 10 de der = 162 par donne.   Belote-rebelote (R + D d'atout) : 20.",
             550.,
-            622.,
+            606.,
             &f.petit,
-            C_TXT,
+            C_ENCRE,
             Align::Center,
         );
         self.text(
             "Annonces : tierce 20, cinquante 50, cent 100 ; carré de valets 200, de 9 150, d'as / 10 / rois / dames 100.",
             550.,
-            644.,
+            628.,
             &f.petit,
-            C_TXT,
+            C_ENCRE,
             Align::Center,
         );
-        self.text("F, Échap ou clic : fermer", 550., 670., &f.petit, C_TXTDIM, Align::Center);
+        self.text("F, Échap ou clic : fermer", 550., 652., &f.petit, C_ENCRE_PALE, Align::Center);
     }
 
     /// Touche G : les 32 cartes et le dos.
@@ -392,6 +400,7 @@ pub fn gallery(g: &Gfx, f: &Polices, deck: &Paquet) {
 /// Couche fixe tant que l'état ne change pas (talon, étiquettes, mains adverses) : mise en cache.
 pub fn draw_under(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, vue: &Vue) {
     let s = Scene { g, f, deck, vue };
+    s.panels_fond();
     s.talon(t);
     s.labels(t);
     s.opp_hands(t);
@@ -417,8 +426,8 @@ pub fn draw_over(t: &Table, g: &Gfx, f: &Polices, deck: &Paquet, ov: &Overlay, v
     s.bubbles(t);
     s.overlay(t);
     s.buttons(t, ov.mouse);
-    s.text(&t.message(), 550., 757., &f.etiquette, C_TXT, Align::Center);
-    s.text(&ov.optline, 550., 780., &f.petit, C_TXTDIM, Align::Center);
+    s.text_ombre(&t.message(), 550., 755., &f.etiquette, C_TXT, Align::Center);
+    s.text_ombre(&ov.optline, 550., 780., &f.petit, C_TXTDIM, Align::Center);
     if ov.strength {
         s.strength(t);
     }

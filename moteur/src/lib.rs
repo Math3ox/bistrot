@@ -2,12 +2,12 @@
 //!
 //! - [`shell`] : fenêtre et boucle (winit + softbuffer), décor en cache, images seulement si quelque chose change.
 //! - [`gfx`] : dessin 100 % processeur (tiny-skia + ab_glyph) en coordonnées logiques 1100 x 800.
-//! - [`polices`] : polices du système (Windows, Linux, macOS) aux tailles de l'interface.
-//! - [`cartes`] : cartes au design bistrot (jeux de 32, 52, jokers, tarot), dessinées une fois puis posées.
-//! - [`table`] : table ronde en perspective et places de 2 à 5 joueurs autour.
+//! - [`polices`] : polices du système (gothique et Palatino sous Windows, équivalents sous Linux), lues à la demande.
+//! - [`cartes`] : cartes enluminées (jeux de 32, 52, jokers, tarot), dessinées une fois puis posées.
+//! - [`table`] : décor de taverne (plancher, table de chêne, chandelles) en cache, places de 2 à 5 joueurs autour.
 //! - [`anim`] : carte envoyée en arc avec son ombre, ramassage du pli.
 //! - [`iso`] : projection isométrique 3D (jeux de dés : cylindres, ombres, texte couché).
-//! - [`ui`] : boutons, bulles, étiquettes de joueurs, panneaux.
+//! - [`ui`] : parchemins (panneaux, étiquettes de joueurs, bulles), boutons, pièce du donneur.
 //! - [`reseau`] : jeu en ligne « lockstep » en étoile (l'hôte relaie), 2 à 5 joueurs.
 //! - [`reglages`] : fichier de réglages texte « clé = valeur » à côté de l'exécutable.
 //!

@@ -1,7 +1,8 @@
 //! Dessin 100 % processeur (aucune carte graphique) en coordonnées logiques 1100 x 800 : formes pleines
-//! anticrénelées avec contour (tiny-skia), transformation affine (objets posés, tournés, écrasés par la
-//! perspective), images posées avec n'importe quelle transformation, textes alignés comme sous GDI
-//! (haut du texte = haut de la cellule de la police, ab_glyph), mis à l'échelle de la fenêtre.
+//! anticrénelées avec contour (tiny-skia), dégradés linéaires et circulaires, transformation affine (objets
+//! posés, tournés, écrasés par la perspective), images posées avec n'importe quelle transformation, textes
+//! alignés comme sous GDI (haut du texte = haut de la cellule de la police, ab_glyph), mis à l'échelle de la
+//! fenêtre.
 
 use ab_glyph::{Font, FontVec, PxScale, ScaleFont};
 use std::cell::RefCell;
@@ -28,6 +29,60 @@ impl Color {
 
 pub const fn rgb(r: u8, g: u8, b: u8) -> Color {
     Color::new(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 1.0)
+}
+
+/// Couleur c avec l'opacité a.
+pub const fn alpha(c: Color, a: f32) -> Color {
+    Color::new(c.r, c.g, c.b, a)
+}
+
+/// Mélange de deux couleurs (k = 0 : a, k = 1 : b).
+pub fn mix(a: Color, b: Color, k: f32) -> Color {
+    Color::new(a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k, a.a + (b.a - a.a) * k)
+}
+
+fn stops(arrets: &[(f32, Color)]) -> Vec<tiny_skia::GradientStop> {
+    arrets
+        .iter()
+        .map(|&(p, c)| {
+            let col = tiny_skia::Color::from_rgba(c.r.clamp(0.0, 1.0), c.g.clamp(0.0, 1.0), c.b.clamp(0.0, 1.0), c.a.clamp(0.0, 1.0));
+            tiny_skia::GradientStop::new(p, col.unwrap_or(tiny_skia::Color::BLACK))
+        })
+        .collect()
+}
+
+/// Chemin d'un rectangle arrondi (pour les dégradés).
+pub fn chemin_rrect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
+    Gfx::poly_path(&Gfx::rrect_pts(x, y, w, h, r))
+}
+
+/// Chemin d'une ellipse.
+pub fn chemin_ellipse(cx: f32, cy: f32, rx: f32, ry: f32) -> Option<tiny_skia::Path> {
+    tiny_skia::Rect::from_ltrb(cx - rx, cy - ry, cx + rx, cy + ry).and_then(PathBuilder::from_oval)
+}
+
+/// Chemin d'un polygone.
+pub fn chemin_poly(pts: &[(f32, f32)]) -> Option<tiny_skia::Path> {
+    Gfx::poly_path(pts)
+}
+
+/// Petit générateur pseudo-aléatoire (textures du décor : toujours les mêmes à chaque dessin).
+pub struct Hasard(pub u64);
+
+impl Hasard {
+    /// Nombre entre 0 et 1 (splitmix64 : bon mélange même pour une petite graine).
+    pub fn f(&mut self) -> f32 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    /// Nombre entre a et b.
+    pub fn entre(&mut self, a: f32, b: f32) -> f32 {
+        a + (b - a) * self.f()
+    }
 }
 
 fn paint(c: Color) -> Paint<'static> {
@@ -138,33 +193,45 @@ fn fc_match(_pattern: &str) -> Option<String> {
     None
 }
 
-/// Fichier de police (le premier qui existe dans la liste ; lu à la demande, sans prétraitement).
+/// Police chargée : (identifiant, police) et hauteur au-dessus de la ligne de base.
+type Chargee = (Option<(usize, Rc<FontVec>)>, f32);
+
+/// Fichier de police (le premier qui existe dans la liste), lu seulement à la première utilisation :
+/// une police dont le jeu ne se sert pas ne coûte rien en mémoire.
 pub struct FontFile {
-    font: Option<(usize, Rc<FontVec>)>,
-    asc: f32,
+    chemins: Vec<&'static str>,
+    fc: &'static str,
+    chargee: std::cell::OnceCell<Chargee>,
 }
 
 impl FontFile {
     /// `fc` : motif fontconfig (ex. « sans-serif:bold ») demandé à `fc-match` si aucun chemin n'existe
     /// (sous Linux, les polices installées varient d'une distribution à l'autre : Fedora n'a que Noto).
-    pub fn load(paths: &[&str], fc: &str) -> FontFile {
-        paths
-            .iter()
-            .find_map(|p| Self::open(p))
-            .or_else(|| Self::open(&fc_match(fc)?))
-            .unwrap_or(FontFile { font: None, asc: 0.8 })
+    pub fn load(paths: &[&'static str], fc: &'static str) -> FontFile {
+        FontFile { chemins: paths.to_vec(), fc, chargee: std::cell::OnceCell::new() }
     }
 
-    fn open(path: &str) -> Option<FontFile> {
+    fn chargee(&self) -> &Chargee {
+        self.chargee.get_or_init(|| {
+            self.chemins
+                .iter()
+                .find_map(|p| Self::open(p))
+                .or_else(|| Self::open(&fc_match(self.fc)?))
+                .unwrap_or((None, 0.8))
+        })
+    }
+
+    fn open(path: &str) -> Option<Chargee> {
         let bytes = std::fs::read(path).ok()?;
         let asc = win_ascent(&bytes).unwrap_or(0.95);
         let font = FontVec::try_from_vec(bytes).ok()?;
         let id = NEXT_FONT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Some(FontFile { font: Some((id, Rc::new(font))), asc })
+        Some((Some((id, Rc::new(font))), asc))
     }
 
     pub fn face(&self, size: f32) -> Face {
-        Face { font: self.font.clone(), size, asc: self.asc }
+        let (font, asc) = self.chargee();
+        Face { font: font.clone(), size, asc: *asc }
     }
 }
 
@@ -236,6 +303,19 @@ impl<'a> Gfx<'a> {
         (pm.width(), pm.height())
     }
 
+    /// Rectangle logique (x0, y0, x1, y1) couvert par toute l'image : plus large que 1100 x 800 quand les
+    /// proportions de l'écran diffèrent (bandes sur les côtés en plein écran 16:9).
+    pub fn visible(&self) -> (f32, f32, f32, f32) {
+        let (w, h) = self.snapshot_size();
+        (-self.ox / self.sc, -self.oy / self.sc, (w as f32 - self.ox) / self.sc, (h as f32 - self.oy) / self.sc)
+    }
+
+    /// Accès direct aux pixels de l'image en cours (caches de décor).
+    pub fn pixels<R>(&self, f: impl FnOnce(&mut Pixmap) -> R) -> R {
+        let mut pm = self.pm.borrow_mut();
+        f(&mut pm)
+    }
+
     /// Remplace l'image en cours par une image en cache de même taille.
     pub fn restore(&self, img: &Pixmap) {
         let mut pm = self.pm.borrow_mut();
@@ -268,22 +348,45 @@ impl<'a> Gfx<'a> {
 
     /// Rectangle arrondi rempli d'un dégradé vertical (haut -> bas), avec contour éventuel.
     pub fn rrect_degrade(&self, xf: &Xf, x: f32, y: f32, w: f32, h: f32, r: f32, haut: Color, bas: Color, line: Option<Color>) {
-        let Some(path) = Self::poly_path(&Self::rrect_pts(x, y, w, h, r)) else { return };
-        let tc = |c: Color| tiny_skia::Color::from_rgba(c.r, c.g, c.b, c.a).unwrap_or(tiny_skia::Color::BLACK);
-        let shader = tiny_skia::LinearGradient::new(
-            tiny_skia::Point::from_xy(0.0, y),
-            tiny_skia::Point::from_xy(0.0, y + h),
-            vec![tiny_skia::GradientStop::new(0.0, tc(haut)), tiny_skia::GradientStop::new(1.0, tc(bas))],
-            tiny_skia::SpreadMode::Pad,
-            Transform::identity(),
-        );
+        let Some(path) = chemin_rrect(x, y, w, h, r) else { return };
+        self.lineaire(xf, &path, (0.0, y), (0.0, y + h), &[(0.0, haut), (1.0, bas)]);
+        if line.is_some() {
+            self.path(xf, Some(path), None, line, 0.6);
+        }
+    }
+
+    fn remplir_degrade(&self, xf: &Xf, path: &tiny_skia::Path, shader: Option<tiny_skia::Shader>) {
         if let Some(shader) = shader {
             let paint = Paint { shader, anti_alias: true, ..Default::default() };
             let ts = self.view().pre_concat(xf.ts());
-            self.pm.borrow_mut().fill_path(&path, &paint, FillRule::Winding, ts, None);
+            self.pm.borrow_mut().fill_path(path, &paint, FillRule::Winding, ts, None);
         }
-        if line.is_some() {
-            self.path(xf, Some(path), None, line, 0.6);
+    }
+
+    /// Forme remplie d'un dégradé linéaire de p0 à p1 (repère de l'objet), arrêts (position 0..1, couleur).
+    pub fn lineaire(&self, xf: &Xf, path: &tiny_skia::Path, p0: (f32, f32), p1: (f32, f32), arrets: &[(f32, Color)]) {
+        let shader = tiny_skia::LinearGradient::new(
+            tiny_skia::Point::from_xy(p0.0, p0.1),
+            tiny_skia::Point::from_xy(p1.0, p1.1),
+            stops(arrets),
+            tiny_skia::SpreadMode::Pad,
+            Transform::identity(),
+        );
+        self.remplir_degrade(xf, path, shader);
+    }
+
+    /// Forme remplie d'un dégradé circulaire de centre c et de rayon r (repère de l'objet : un xf écrasé
+    /// donne une lueur en ellipse, comme une lumière posée sur la table).
+    pub fn radial(&self, xf: &Xf, path: &tiny_skia::Path, c: (f32, f32), r: f32, arrets: &[(f32, Color)]) {
+        let p = tiny_skia::Point::from_xy(c.0, c.1);
+        let shader = tiny_skia::RadialGradient::new(p, p, r, stops(arrets), tiny_skia::SpreadMode::Pad, Transform::identity());
+        self.remplir_degrade(xf, path, shader);
+    }
+
+    /// Lueur : disque de rayon r centré en c rempli d'un dégradé circulaire (transparent au bord).
+    pub fn lueur(&self, xf: &Xf, c: (f32, f32), r: f32, arrets: &[(f32, Color)]) {
+        if let Some(path) = chemin_ellipse(c.0, c.1, r, r) {
+            self.radial(xf, &path, c, r, arrets);
         }
     }
 
@@ -347,6 +450,22 @@ impl<'a> Gfx<'a> {
     /// Rectangle arrondi (rayon r).
     pub fn rrect(&self, xf: &Xf, x: f32, y: f32, w: f32, h: f32, r: f32, fill: Option<Color>, line: Option<Color>) {
         self.poly(xf, &Self::rrect_pts(x, y, w, h, r), fill, line);
+    }
+
+    /// Rectangle arrondi avec un contour d'épaisseur lw (unités logiques).
+    pub fn rrect_w(&self, xf: &Xf, x: f32, y: f32, w: f32, h: f32, r: f32, fill: Option<Color>, line: Option<Color>, lw: f32) {
+        self.poly_w(xf, &Self::rrect_pts(x, y, w, h, r), fill, line, lw);
+    }
+
+    /// Ligne brisée (non fermée) d'épaisseur w.
+    pub fn polyligne(&self, xf: &Xf, pts: &[(f32, f32)], w: f32, c: Color) {
+        let mut pb = PathBuilder::new();
+        let Some(&(x0, y0)) = pts.first() else { return };
+        pb.move_to(x0, y0);
+        for &(x, y) in &pts[1..] {
+            pb.line_to(x, y);
+        }
+        self.path(xf, pb.finish(), None, Some(c), w);
     }
 
     pub fn ellipse(&self, xf: &Xf, cx: f32, cy: f32, rx: f32, ry: f32, fill: Option<Color>, line: Option<Color>) {

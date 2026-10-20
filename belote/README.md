@@ -1,7 +1,7 @@
 # Belote en 3D isométrique (Rust, Windows / Linux / macOS)
 
-Belote contre des bots (ou en ligne avec des amis) : table ronde en perspective isométrique, cartes posées sur le
-tapis avec rotation et animation. Même esprit que le jeu du 421. Écrit en Rust.
+Belote contre des bots (ou en ligne avec des amis) : table ronde en perspective isométrique, cartes posées sur la
+table de chêne d'une taverne aux chandelles, avec rotation et animation. Même esprit que le jeu du 421. Écrit en Rust.
 Le dessin est fait **entièrement par le processeur, sans carte graphique ni OpenGL** (tiny-skia pour les formes
 anticrénelées, ab_glyph pour le texte, winit + softbuffer pour la fenêtre : affichage par GDI sous Windows).
 Comme dans la version assembleur, le décor est calculé une fois puis gardé en cache, seul ce qui bouge est
@@ -90,7 +90,8 @@ Depuis la racine du dépôt : `build.bat` (Windows) ou `cargo build --release -p
 - `src/engine.rs` : règles (enchères, annonces, plis, décompte), bots facile / normal, Monte-Carlo, banc d'essai `-sim`.
 - `src/table.rs` : déroulement (tours des bots, délais, animations, bulles, aide, actions en ligne) ; jeu en ligne
   (`bistrot::reseau::Partie`).
-- `src/draw.rs` : dessin de la scène avec le moteur (cartes, places, animations, panneaux, force des cartes).
+- `src/draw.rs` : dessin de la scène avec le moteur (cartes, places, animations, panneaux, force des cartes), au
+  style taverne du moteur (table de chêne aux chandelles, parchemins, cartes enluminées, titres en gothique).
 - `src/vue.rs` : ce qui bouge à l'écran sans toucher à la partie : distribution des cartes, main qui se réarrange,
   levée au survol, retourne qui se retourne, bulles, score qui défile.
 - `src/main.rs` : le jeu dans sa fenêtre (`bistrot::shell::Game` : touches, clics, couche fixe en cache), `-sim`.

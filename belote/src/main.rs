@@ -15,6 +15,7 @@ use bistrot::gfx::Gfx;
 use bistrot::polices::{Fichiers, Polices};
 use bistrot::reseau::{Menu, Net};
 use bistrot::shell::{self, Key};
+use bistrot::table::Decor;
 use draw::{BtnId, Overlay};
 use engine::*;
 use std::hash::{Hash, Hasher};
@@ -46,6 +47,7 @@ fn main() {
         mouse: (0.0, 0.0),
         sig: 0,
         vue: vue::Vue::default(),
+        decor: Decor::default(),
     });
 }
 
@@ -66,6 +68,8 @@ struct Belote {
     sig: u64,
     /// ce qui bouge à l'écran (distribution, main, retourne, bulles, score)
     vue: vue::Vue,
+    /// décor de la taverne en cache
+    decor: Decor,
 }
 
 fn btn_action(t: &mut Table, id: BtnId) {
@@ -119,7 +123,7 @@ impl shell::Game for Belote {
 
     fn background(&mut self, g: &Gfx) {
         self.paquet.echelle((g.sc * 1.04).max(0.5));
-        bistrot::table::dessiner(g);
+        self.decor.dessiner(g);
         if !self.gallery {
             draw::draw_under(&self.t, g, &self.polices, &self.paquet, &self.vue);
         }
@@ -127,6 +131,7 @@ impl shell::Game for Belote {
 
     fn alleger(&mut self) {
         self.paquet.alleger();
+        self.decor.alleger();
     }
 
     fn draw(&mut self, g: &Gfx) {
@@ -346,6 +351,54 @@ mod tests {
         assert!(!ts[0].online);
     }
 
+    /// Dessine une scène sans fenêtre dans target/apercu_<nom>.png.
+    fn apercu(t: &Table, vue: &vue::Vue, polices: &Polices, paquet: &mut Paquet, glyphs: &RefCell<bistrot::gfx::Glyphs>, decor: &mut Decor, mouse: (f32, f32), nom: &str) {
+        let mut pm = tiny_skia::Pixmap::new(1100, 800).unwrap();
+        let g = Gfx::fit(&mut pm, glyphs);
+        paquet.echelle(g.sc * 1.04);
+        decor.dessiner(&g);
+        draw::draw_under(t, &g, polices, paquet, vue);
+        let ov = Overlay { strength: false, hover: None, mouse, net: None, optline: draw::optline(t) };
+        draw::draw_over(t, &g, polices, paquet, &ov, vue);
+        drop(g);
+        pm.save_png(format!("../target/apercu_{nom}.png")).unwrap();
+    }
+
+    /// Aperçus des écrans difficiles à capturer en direct : enchères (souris sur « Prendre ») et bilan de manche
+    /// (cargo test --release -p belote -- --ignored apercus).
+    #[test]
+    #[ignore]
+    fn apercus() {
+        let fichiers = Fichiers::charger();
+        let polices = Polices::depuis(&fichiers);
+        let mut paquet = Paquet::new(&fichiers);
+        let glyphs = RefCell::new(bistrot::gfx::Glyphs::default());
+        let mut decor = Decor::default();
+        let mut vue = vue::Vue::default();
+        let mut t = Table::new(7);
+        for _ in 0..2000 {
+            t.tick(20.0);
+            vue.maj(&t, None, 20.0);
+            if t.phase() == PH_BID1 && t.is_human(t.turn()) && !vue.anime() {
+                break;
+            }
+        }
+        apercu(&t, &vue, &polices, &mut paquet, &glyphs, &mut decor, (470.0, 584.0), "encheres");
+        t.auto = true;
+        for _ in 0..20000 {
+            t.tick(20.0);
+            vue.maj(&t, None, 20.0);
+            if t.phase() == PH_ROUNDEND {
+                break;
+            }
+        }
+        t.auto = false;
+        for _ in 0..200 {
+            vue.maj(&t, None, 20.0);
+        }
+        apercu(&t, &vue, &polices, &mut paquet, &glyphs, &mut decor, (550.0, 574.0), "bilan");
+    }
+
     /// Temps de dessin d'une image en pleine partie (cargo test --release -p belote -- --ignored mesure_dessin --nocapture).
     #[test]
     #[ignore]
@@ -361,6 +414,26 @@ mod tests {
             if t.e.gs.tn == 3 {
                 break;
             }
+        }
+        // décor seul, en fenêtre et en plein écran 1080p (refait à chaque changement de la couche fixe)
+        for (w, h) in [(1920u32, 1080u32), (1100, 800)] {
+            let mut pm = tiny_skia::Pixmap::new(w, h).unwrap();
+            let t0 = Instant::now();
+            for _ in 0..10 {
+                bistrot::table::dessiner(&Gfx::fit(&mut pm, &glyphs));
+            }
+            println!("decor {w}x{h} : {:.2} ms", t0.elapsed().as_secs_f64() * 100.0);
+        }
+        // fond refait depuis le cache du décor (à chaque changement de la couche fixe)
+        for (w, h) in [(1920u32, 1080u32), (1100, 800)] {
+            let mut pm = tiny_skia::Pixmap::new(w, h).unwrap();
+            let mut decor = Decor::default();
+            decor.dessiner(&Gfx::fit(&mut pm, &glyphs));
+            let t0 = Instant::now();
+            for _ in 0..10 {
+                decor.dessiner(&Gfx::fit(&mut pm, &glyphs));
+            }
+            println!("decor en cache {w}x{h} : {:.2} ms ({} Ko)", t0.elapsed().as_secs_f64() * 100.0, decor.octets() >> 10);
         }
         let mut bg = tiny_skia::Pixmap::new(1100, 800).unwrap();
         {

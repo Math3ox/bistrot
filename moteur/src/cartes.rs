@@ -1,8 +1,10 @@
-//! Cartes au design « bistrot classique » : papier ivoire légèrement dégradé, ombre douce, double filet,
-//! indices en serif aux coins (celui du bas retourné, comme sur un vrai jeu), couleurs dessinées en formes
-//! vectorielles (♠ ♥ ♦ ♣ nets à toutes les tailles), points du bas retournés, figures à double tête (roi
-//! couronné et barbu, dame aux cheveux longs, valet au béret à plume, cavalier casqué), as ornés ;
-//! dos bordeaux dégradé à losanges dorés et médaillon. Toutes les cartes des jeux de bistrot : 2 à 10,
+//! Cartes « enluminées » (style taverne) : vélin légèrement dégradé, ombre douce, cadre doré et filet de la
+//! couleur, fleurons dorés aux coins, indices en Palatino aux coins (celui du bas retourné, comme sur un vrai
+//! jeu), couleurs dessinées en formes vectorielles (♠ ♥ ♦ ♣ nettes à toutes les tailles) aux encres profondes en
+//! dégradé, points du bas retournés, figures à double tête (roi couronné et barbu, dame aux cheveux longs, valet
+//! au béret à plume, cavalier casqué) sur fond losangé d'or, outremer ou pourpre comme dans les manuscrits ; as
+//! dans un anneau d'or perlé ; dos pourpre à losanges dorés et médaillon outremer à la fleur de lys. Toutes les
+//! cartes des jeux de bistrot : 2 à 10,
 //! valet, cavalier (tarot), dame, roi, as des quatre couleurs, atouts du tarot (1 à 21), excuse, jokers.
 //!
 //! Chaque carte est dessinée une seule fois dans une petite image à l'échelle de la fenêtre (à la première
@@ -10,27 +12,37 @@
 //! rapide). Le cache est limité en mémoire : les images les moins utilisées sont oubliées au-delà du budget.
 //! Repère canonique d'une carte : 100 x 140 centré sur l'origine.
 
-use crate::gfx::{rgb, Align, Color, Face, Gfx, Glyphs, Xf};
+use crate::gfx::{alpha, chemin_ellipse, chemin_rrect, rgb, Align, Color, Face, Gfx, Glyphs, Xf};
 use crate::polices::Fichiers;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use tiny_skia::{Path, PathBuilder, Pixmap};
 
-const C_SHADOW: Color = rgb(6, 38, 26);
-const C_PAPER_HI: Color = rgb(253, 251, 245);
-const C_PAPER_LO: Color = rgb(241, 235, 221);
-const C_CRED: Color = rgb(194, 38, 46);
-const C_CBLK: Color = rgb(27, 27, 34);
-const C_TRED: Color = rgb(232, 186, 180);
-const C_TBLK: Color = rgb(190, 188, 182);
-const C_PANEL_HI: Color = rgb(249, 243, 228);
-const C_PANEL_LO: Color = rgb(236, 225, 199);
-const C_GOLDF: Color = rgb(217, 178, 106);
-const C_GOLDLN: Color = rgb(140, 106, 36);
-const C_BORD_HI: Color = rgb(146, 40, 54);
-const C_BORD_LO: Color = rgb(100, 22, 34);
-const C_BORD: Color = rgb(122, 31, 43);
-const C_CLN2: Color = rgb(150, 143, 120);
+const C_SHADOW: Color = rgb(22, 11, 4);
+const C_PAPER_HI: Color = rgb(252, 247, 232);
+const C_PAPER_LO: Color = rgb(238, 225, 196);
+const C_CRED: Color = rgb(164, 22, 36);
+const C_CBLK: Color = rgb(24, 22, 30);
+/// dégradés des points : encres rouge et noire profondes
+const C_RED_HI: Color = rgb(212, 48, 56);
+const C_RED_LO: Color = rgb(122, 10, 26);
+const C_BLK_HI: Color = rgb(76, 76, 98);
+const C_BLK_LO: Color = rgb(12, 10, 18);
+/// filets intérieurs : rouge pâle (♥ ♦), outremer pâle (♠ ♣)
+const C_TRED: Color = rgb(212, 128, 118);
+const C_TBLK: Color = rgb(110, 122, 172);
+const C_PANEL_HI: Color = rgb(250, 243, 224);
+const C_PANEL_LO: Color = rgb(232, 215, 178);
+const C_GOLDF: Color = rgb(222, 176, 74);
+const C_GOLDHI: Color = rgb(252, 226, 146);
+const C_GOLDLN: Color = rgb(126, 88, 22);
+const C_LAPIS_HI: Color = rgb(54, 78, 164);
+const C_LAPIS_LO: Color = rgb(20, 30, 84);
+const C_POURPRE_HI: Color = rgb(156, 30, 46);
+const C_POURPRE_LO: Color = rgb(80, 10, 24);
+const C_BORD_HI: Color = rgb(138, 24, 42);
+const C_BORD_LO: Color = rgb(62, 8, 20);
+const C_CLN2: Color = rgb(150, 126, 90);
 const C_SKIN: Color = rgb(244, 216, 190);
 const C_LINE: Color = rgb(70, 50, 40);
 
@@ -212,6 +224,96 @@ fn chemin_etoile() -> Option<Path> {
     pb.finish()
 }
 
+/// Fleur de lys dans le carré [-1, 1] (pétale central, pétales recourbés, bandeau, pied).
+fn chemins_lys() -> Vec<Path> {
+    let mut v = Vec::new();
+    let mut pb = PathBuilder::new();
+    pb.move_to(0.0, -1.0);
+    pb.cubic_to(0.26, -0.74, 0.36, -0.42, 0.22, -0.12);
+    pb.cubic_to(0.16, 0.0, 0.11, 0.08, 0.1, 0.16);
+    pb.line_to(-0.1, 0.16);
+    pb.cubic_to(-0.11, 0.08, -0.16, 0.0, -0.22, -0.12);
+    pb.cubic_to(-0.36, -0.42, -0.26, -0.74, 0.0, -1.0);
+    pb.close();
+    v.extend(pb.finish());
+    for s in [-1.0f32, 1.0] {
+        let mut pb = PathBuilder::new();
+        pb.move_to(s * 0.12, 0.16);
+        pb.cubic_to(s * 0.16, -0.3, s * 0.6, -0.62, s * 0.9, -0.38);
+        pb.cubic_to(s * 1.08, -0.2, s * 0.98, 0.1, s * 0.76, 0.14);
+        pb.cubic_to(s * 0.84, 0.0, s * 0.8, -0.16, s * 0.66, -0.17);
+        pb.cubic_to(s * 0.46, -0.18, s * 0.32, 0.0, s * 0.3, 0.16);
+        pb.close();
+        v.extend(pb.finish());
+        let mut pb = PathBuilder::new();
+        pb.move_to(s * 0.06, 0.3);
+        pb.cubic_to(s * 0.26, 0.34, s * 0.48, 0.46, s * 0.52, 0.7);
+        pb.cubic_to(s * 0.36, 0.58, s * 0.2, 0.52, s * 0.04, 0.52);
+        pb.close();
+        v.extend(pb.finish());
+    }
+    let mut pb = PathBuilder::new();
+    pb.move_to(-0.1, 0.3);
+    pb.cubic_to(-0.12, 0.54, -0.05, 0.72, 0.0, 0.86);
+    pb.cubic_to(0.05, 0.72, 0.12, 0.54, 0.1, 0.3);
+    pb.close();
+    v.extend(pb.finish());
+    v.extend(chemin_rrect(-0.46, 0.13, 0.92, 0.19, 0.06));
+    v
+}
+
+/// Fleur de lys dorée centrée en (cx, cy), de demi-hauteur h.
+fn lys(g: &Gfx, xf: &Xf, cx: f32, cy: f32, h: f32) {
+    let local = xf.puis(&Xf::centre(cx, cy, h));
+    for p in chemins_lys() {
+        g.lineaire(&local, &p, (0.0, -1.0), (0.0, 1.0), &[(0.0, C_GOLDHI), (0.5, C_GOLDF), (1.0, rgb(176, 128, 40))]);
+        g.forme(&local, &p, None, Some(C_GOLDLN), 0.05);
+    }
+}
+
+/// Fleuron doré (quatre perles autour d'un cœur de couleur), de taille k.
+fn fleuron(g: &Gfx, xf: &Xf, x: f32, y: f32, k: f32, coeur: Color) {
+    for i in 0..4 {
+        let a = (45.0 + 90.0 * i as f32).to_radians();
+        g.ellipse(xf, x + 2.1 * k * a.cos(), y + 2.1 * k * a.sin(), 1.45 * k, 1.45 * k, Some(C_GOLDF), Some(C_GOLDLN));
+    }
+    g.ellipse(xf, x, y, 1.0 * k, 1.0 * k, Some(coeur), None);
+}
+
+/// Treillis de losanges (droites à 45°) recoupé au rectangle [x0, x1] x [y0, y1], perles au centre des losanges.
+fn losanges(g: &Gfx, x0: f32, y0: f32, x1: f32, y1: f32, pas: f32, trait_: Color, w: f32, perle: Option<Color>) {
+    let id = Xf::ID;
+    let mut c = ((x0 - y1) / pas).floor() * pas;
+    while c <= x1 - y0 {
+        // y = x - c
+        let (a, b) = (x0.max(y0 + c), x1.min(y1 + c));
+        if a < b {
+            g.line(&id, a, a - c, b, b - c, w, trait_);
+        }
+        c += pas;
+    }
+    let mut c = ((x0 + y0) / pas).floor() * pas;
+    while c <= x1 + y1 {
+        // y = c - x
+        let (a, b) = (x0.max(c - y1), x1.min(c - y0));
+        if a < b {
+            g.line(&id, a, c - a, b, c - b, w, trait_);
+        }
+        c += pas;
+    }
+    if let Some(col) = perle {
+        let h = pas / 2.0;
+        for i in (x0 / h).ceil() as i32..=(x1 / h).floor() as i32 {
+            for j in (y0 / h).ceil() as i32..=(y1 / h).floor() as i32 {
+                let (x, y) = (i as f32 * h, j as f32 * h);
+                if (i + j) & 1 == 1 && x > x0 + 1.5 && x < x1 - 1.5 && y > y0 + 1.5 && y < y1 - 1.5 {
+                    g.ellipse(&id, x, y, 0.75, 0.75, Some(col), None);
+                }
+            }
+        }
+    }
+}
+
 /// Dessine le symbole d'une couleur centré en (cx, cy), de demi-hauteur h, dans le repère xf.
 pub fn symbole(g: &Gfx, xf: &Xf, c: Couleur, cx: f32, cy: f32, h: f32, col: Color) {
     let local = xf.puis(&Xf::centre(cx, cy, h));
@@ -220,11 +322,15 @@ pub fn symbole(g: &Gfx, xf: &Xf, c: Couleur, cx: f32, cy: f32, h: f32, col: Colo
     }
 }
 
-/// Même chose, retourné (moitié basse d'une carte).
-fn symbole_retourne(g: &Gfx, xf: &Xf, c: Couleur, cx: f32, cy: f32, h: f32, col: Color) {
-    let local = xf.puis(&Xf::centre(cx, cy, h)).puis(&Xf::DEMI_TOUR);
+/// Point d'une carte : symbole à l'encre profonde en dégradé (retourné dans la moitié basse).
+fn point(g: &Gfx, xf: &Xf, c: Couleur, cx: f32, cy: f32, h: f32, retourne: bool) {
+    let mut local = xf.puis(&Xf::centre(cx, cy, h));
+    if retourne {
+        local = local.puis(&Xf::DEMI_TOUR);
+    }
+    let (hi, lo) = if c.rouge() { (C_RED_HI, C_RED_LO) } else { (C_BLK_HI, C_BLK_LO) };
     for p in chemins_couleur(c) {
-        g.forme(&local, &p, Some(col), None, 0.0);
+        g.lineaire(&local, &p, (0.0, -1.0), (0.0, 1.0), &[(0.0, hi), (1.0, lo)]);
     }
 }
 
@@ -280,7 +386,7 @@ pub struct PolicesCartes {
 
 impl PolicesCartes {
     pub fn depuis(f: &Fichiers) -> PolicesCartes {
-        PolicesCartes { serif: f.serif.face(25.0), serif_grand: f.serif.face(46.0), serif_petit: f.serif.face(14.0) }
+        PolicesCartes { serif: f.livre.face(26.0), serif_grand: f.livre.face(46.0), serif_petit: f.livre.face(14.0) }
     }
 }
 
@@ -288,16 +394,20 @@ impl PolicesCartes {
 fn ombre(g: &Gfx) {
     for i in 0..7 {
         let e = i as f32;
-        let c = Color::new(C_SHADOW.r, C_SHADOW.g, C_SHADOW.b, 0.085);
+        let c = alpha(C_SHADOW, 0.09);
         g.rrect(&Xf::ID, -50. + 2.5 - e, -70. + 4. - e, 100. + 2. * e, 140. + 2. * e, 12. + e, Some(c), None);
     }
 }
 
+/// Vélin, cadre doré, filet de la couleur et fleurons aux deux coins libres.
 fn papier(g: &Gfx, filet: Color) {
     let id = Xf::ID;
     ombre(g);
     g.rrect_degrade(&id, -50., -70., 100., 140., 12., C_PAPER_HI, C_PAPER_LO, Some(C_CLN2));
-    g.rrect(&id, -46.5, -66.5, 93., 133., 8., None, Some(filet));
+    g.rrect_w(&id, -46.5, -66.5, 93., 133., 8., None, Some(C_GOLDF), 1.1);
+    g.rrect(&id, -44.2, -64.2, 88.4, 128.4, 6.5, None, Some(filet));
+    fleuron(g, &id, 38.5, -58.0, 1.0, filet);
+    fleuron(g, &id, -38.5, 58.0, 1.0, filet);
 }
 
 /// Symbole d'un indice de coin.
@@ -330,8 +440,7 @@ fn indices(g: &Gfx, f: &PolicesCartes, texte: &str, signe: Signe, encre: Color) 
 
 /// Moitié haute d'une figure (la moitié basse est la même, retournée) : robe, tête, coiffe.
 fn figure(g: &Gfx, xf: &Xf, v: Valeur, c: Couleur) {
-    let (robe, robe_ombre) = if c.rouge() { (rgb(168, 34, 44), rgb(112, 20, 28)) } else { (rgb(40, 56, 108), rgb(22, 30, 66)) };
-    let encre = if c.rouge() { C_CRED } else { C_CBLK };
+    let (robe, robe_ombre) = if c.rouge() { (rgb(166, 26, 40), rgb(100, 12, 24)) } else { (rgb(36, 56, 134), rgb(18, 26, 76)) };
     // attribut tenu, derrière le buste : sceptre (roi), fleur (dame), hallebarde (valet), lance (cavalier)
     match v {
         Valeur::Roi => {
@@ -446,8 +555,8 @@ fn figure(g: &Gfx, xf: &Xf, v: Valeur, c: Couleur) {
             }
         }
     }
-    // petite couleur dans le coin du cadre
-    symbole(g, xf, c, -19.0, -46.0, 4.2, encre);
+    // petite couleur dorée dans le coin du cadre
+    symbole(g, xf, c, -19.0, -46.0, 4.2, C_GOLDHI);
 }
 
 fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
@@ -459,24 +568,39 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
             indices(g, f, &v.indice(), Signe::Couleur(c), encre);
             match v {
                 Valeur::As => {
-                    g.ellipse(&id, 0., 0., 34., 34., None, Some(filet));
-                    g.ellipse(&id, 0., 0., 31., 31., None, Some(filet));
-                    symbole(g, &id, c, 0., 0., 24., encre);
+                    // anneau d'or perlé d'outremer et de pourpre, fleurons aux diagonales
+                    if let Some(p) = chemin_ellipse(0., 0., 33., 33.) {
+                        g.forme(&id, &p, None, Some(C_GOLDF), 4.6);
+                    }
+                    g.ellipse(&id, 0., 0., 35.3, 35.3, None, Some(C_GOLDLN));
+                    g.ellipse(&id, 0., 0., 30.7, 30.7, None, Some(C_GOLDLN));
+                    for k in 0..16 {
+                        let a = (k as f32 * 22.5).to_radians();
+                        let perle = if k % 2 == 0 { C_LAPIS_HI } else { C_POURPRE_HI };
+                        g.ellipse(&id, 33. * a.cos(), 33. * a.sin(), 1.15, 1.15, Some(perle), None);
+                    }
+                    for (sx, sy) in [(-1.0f32, -1.0f32), (1., -1.), (-1., 1.), (1., 1.)] {
+                        fleuron(g, &id, sx * 31., sy * 45., 1.25, encre);
+                    }
+                    point(g, &id, c, 0., 0., 23., false);
                 }
                 Valeur::N(n) => {
                     for &(x, y) in points(n) {
-                        if y > 0.0 {
-                            symbole_retourne(g, &id, c, x, y, 8.5, encre);
-                        } else {
-                            symbole(g, &id, c, x, y, 8.5, encre);
-                        }
+                        point(g, &id, c, x, y, 8.5, y > 0.0);
                     }
                 }
                 _ => {
-                    g.rrect_degrade(&id, -26., -54., 52., 108., 6., C_PANEL_HI, C_PANEL_LO, Some(filet));
+                    // fond losangé d'or, outremer derrière les figures rouges, pourpre derrière les noires
+                    let (hi, lo) = if c.rouge() { (C_LAPIS_HI, C_LAPIS_LO) } else { (C_POURPRE_HI, C_POURPRE_LO) };
+                    if let Some(p) = chemin_rrect(-26., -54., 52., 108., 6.) {
+                        g.lineaire(&id, &p, (0., -54.), (0., 54.), &[(0.0, lo), (0.5, hi), (1.0, lo)]);
+                    }
+                    losanges(g, -24.5, -52.5, 24.5, 52.5, 8., alpha(C_GOLDF, 0.42), 0.35, Some(alpha(C_GOLDHI, 0.8)));
                     figure(g, &id, v, c);
                     figure(g, &Xf::DEMI_TOUR, v, c);
                     g.line(&id, -26., 0., 26., 0., 0.8, C_GOLDLN);
+                    g.rrect_w(&id, -26., -54., 52., 108., 6., None, Some(C_GOLDF), 1.3);
+                    g.rrect(&id, -26., -54., 52., 108., 6., None, Some(C_GOLDLN));
                 }
             }
         }
@@ -509,28 +633,27 @@ fn dessiner_face(g: &Gfx, f: &PolicesCartes, carte: Carte) {
     }
 }
 
+/// Dos : pourpre à losanges dorés perlés, double cadre doré, médaillon outremer à la fleur de lys.
 fn dessiner_dos(g: &Gfx) {
     let id = Xf::ID;
     ombre(g);
     g.rrect_degrade(&id, -50., -70., 100., 140., 12., C_PAPER_HI, C_PAPER_LO, Some(C_CLN2));
-    g.rrect_degrade(&id, -44., -64., 88., 128., 7., C_BORD_HI, C_BORD_LO, None);
-    // losanges dorés : droites à 45 degrés recoupées au cadre
-    let mut c = -190;
-    while c <= 190 {
-        let x0 = (-39).max(c - 59) as f32;
-        let x1 = 39.min(c + 59) as f32;
-        if x0 < x1 {
-            let cf = c as f32;
-            g.line(&id, x0, x0 - cf, x1, x1 - cf, 0.6, C_GOLDF);
-            g.line(&id, -x0, x0 - cf, -x1, x1 - cf, 0.6, C_GOLDF);
-        }
-        c += 16;
+    if let Some(p) = chemin_rrect(-44., -64., 88., 128., 7.) {
+        g.lineaire(&id, &p, (0., -64.), (0., 64.), &[(0.0, C_BORD_LO), (0.5, C_BORD_HI), (1.0, C_BORD_LO)]);
     }
+    losanges(g, -39., -59., 39., 59., 16., alpha(C_GOLDF, 0.8), 0.6, Some(C_GOLDHI));
     g.rrect(&id, -44., -64., 88., 128., 7., None, Some(C_PAPER_HI));
-    g.rrect(&id, -39., -59., 78., 118., 4., None, Some(C_GOLDF));
-    g.ellipse(&id, 0., 0., 22., 31., Some(C_BORD), Some(C_GOLDF));
-    g.ellipse(&id, 0., 0., 16.5, 24., None, Some(C_GOLDF));
-    symbole(g, &id, Couleur::Coeur, 0., 0., 9., C_GOLDF);
+    g.rrect_w(&id, -39., -59., 78., 118., 4., None, Some(C_GOLDF), 1.3);
+    g.rrect(&id, -36.5, -56.5, 73., 113., 3., None, Some(alpha(C_GOLDF, 0.7)));
+    for (sx, sy) in [(-1.0f32, -1.0f32), (1., -1.), (-1., 1.), (1., 1.)] {
+        fleuron(g, &id, sx * 31.5, sy * 51.5, 1.2, C_LAPIS_HI);
+    }
+    if let Some(p) = chemin_ellipse(0., 0., 22., 31.) {
+        g.radial(&id, &p, (0., -8.), 36., &[(0.0, C_LAPIS_HI), (1.0, C_LAPIS_LO)]);
+        g.forme(&id, &p, None, Some(C_GOLDF), 1.5);
+    }
+    g.ellipse(&id, 0., 0., 18.5, 27., None, Some(alpha(C_GOLDF, 0.8)));
+    lys(g, &id, 0., 1., 14.);
 }
 
 /// Dessine une carte dans une image (ppu pixels par unité).
