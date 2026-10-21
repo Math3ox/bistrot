@@ -6,4 +6,5 @@ if errorlevel 1 (echo ECHEC& exit /b 1)
 copy /y target\release\belote.exe belote.exe >nul
 copy /y target\release\421.exe 421.exe >nul
 copy /y target\release\tarot.exe tarot.exe >nul
+copy /y target\release\rami.exe rami.exe >nul
 echo OK

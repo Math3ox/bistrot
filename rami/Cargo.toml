@@ -1,0 +1,13 @@
+[package]
+name = "rami"
+version = "1.0.0"
+edition = "2021"
+description = "Rami 51 en 3D isometrique (2 a 5 joueurs, bots, en ligne)"
+
+[[bin]]
+name = "rami"
+path = "src/main.rs"
+
+[dependencies]
+bistrot.workspace = true
+tiny-skia = "0.11"
