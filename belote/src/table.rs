@@ -285,6 +285,9 @@ impl Table {
     /// SUITE (fin de manche / de partie).
     pub fn human_next(&mut self) {
         if self.online {
+            if self.nextmask >> self.me & 1 == 1 {
+                return; // déjà envoyé : un second SUITE bloquerait les autres à la donne suivante
+            }
             self.send(NT_NEXT, 0);
             self.mark_next(self.me);
         } else {
